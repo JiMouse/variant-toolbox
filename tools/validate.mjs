@@ -54,7 +54,8 @@ for (const raw of inputs) {
     } else {
       const g4 = ctx.gnomad['v4.1'];
       const g2 = ctx.gnomad['v2.1.1'];
-      console.log(`\nGène ${ctx.gene.symbol} | transcrit ${ctx.variant.transcript}`
+      console.log(`\nNormalisation : ${ctx.source}${ctx.degraded ? ` (dégradé : ${ctx.degraded})` : ''}`);
+      console.log(`Gène ${ctx.gene.symbol} | transcrit ${ctx.variant.transcript}`
         + ` (${ctx.variant.isMane ? 'MANE Select' : `non-MANE, MANE = ${ctx.variant.maneTranscript || '?'}`})`
         + ` | ${ctx.variant.varType} | ${ctx.variant.loc} ${ctx.variant.locField || ''}`);
       console.log(`VCF hg38 ${ctx.variant.pseudoVcf} | ${ctx.variant.hgvsc} | ${ctx.variant.proteinChange || '-'}`
