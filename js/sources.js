@@ -45,12 +45,17 @@ export function vepVcf(chr, pos, ref, alt) {
   return fetchJSON(url, { retries: 5, timeout: 40000 });
 }
 
-/** Base de référence à une position donnée — pour reconstruire la forme VCF d'un indel. */
-export async function refBase(chr, pos) {
-  const url = `https://rest.ensembl.org/sequence/region/human/${chr}:${pos}..${pos}`
-    + `?content-type=application/json&coord_system_version=GRCh38`;
+/** Séquence de référence hg38 sur un intervalle (bornes incluses). */
+export async function refSeq(chr, start, end) {
+  const url = `https://rest.ensembl.org/sequence/region/human/${chr}:${start}..${end}`
+    + '?content-type=application/json&coord_system_version=GRCh38';
   const r = await fetchJSON(url, { retries: 3 });
   return r && r.seq ? r.seq.toUpperCase() : null;
+}
+
+/** Base de référence à une position donnée. */
+export async function refBase(chr, pos) {
+  return refSeq(chr, pos, pos);
 }
 
 /** MyVariant.info : dbNSFP, CADD, ClinVar, gnomAD v2.1.1 exomes. `id` est un HGVS génomique. */
@@ -80,18 +85,23 @@ export function gnomad4(variantId) {
 // L'hôte documenté de SpliceAI ne répond plus (connexion en timeout) : ce sont les
 // services Cloud Run appelés par l'interface officielle qui sont essayés d'abord,
 // l'hôte documenté restant en dernier recours s'il revient un jour.
+// Les services Cloud Run démarrent à froid : il faut leur laisser ~25 s. L'hôte
+// documenté, lui, ne répond plus du tout — timeout court pour ne pas allonger
+// l'attente de 20 s supplémentaires à chaque fois.
 const SPLICEAI_HOSTS = [
-  'https://spliceai-38-xwkwwwxdwq-uc.a.run.app',
-  'https://spliceai-38-comprehensive-xwkwwwxdwq-uc.a.run.app',
-  'https://spliceailookup-api.broadinstitute.org',
+  { host: 'https://spliceai-38-xwkwwwxdwq-uc.a.run.app', timeout: 25000 },
+  { host: 'https://spliceai-38-comprehensive-xwkwwwxdwq-uc.a.run.app', timeout: 25000 },
+  { host: 'https://spliceailookup-api.broadinstitute.org', timeout: 4000 },
 ];
 
 export async function spliceai(variantId, distance = 50) {
   let lastErr;
-  for (const host of SPLICEAI_HOSTS) {
+  for (const { host, timeout } of SPLICEAI_HOSTS) {
     try {
       const url = `${host}/spliceai/?hg=38&distance=${distance}&variant=${encodeURIComponent(variantId)}`;
-      const r = await fetchJSON(url, { retries: 1, timeout: 20000 });
+      const r = await fetchJSON(url, { retries: 0, timeout });
+      // Une réponse d'erreur du service (variant non couvert) est une réponse :
+      // inutile d'essayer les autres hôtes.
       if (r && (r.scores || r.error)) return r;
     } catch (e) {
       lastErr = e;
@@ -100,11 +110,21 @@ export async function spliceai(variantId, distance = 50) {
   throw lastErr || new Error('SpliceAI indisponible');
 }
 
-/** InterVar (wInterVar) : classification ACMG automatique + critères. */
-export function intervar(chr, pos, ref, alt) {
+/**
+ * InterVar (wInterVar) : classification ACMG automatique + critères.
+ * Le service ne traite que les substitutions : pour un indel il renvoie un corps
+ * vide. Ce n'est pas une panne — on renvoie null, et la valeur affichée reste « n.a. ».
+ */
+export async function intervar(chr, pos, ref, alt) {
   const url = `https://wintervar.wglab.org/api_new.php?queryType=position&chr=${chr}`
     + `&pos=${pos}&ref=${ref}&alt=${alt}&build=hg38`;
-  return fetchJSON(url, { retries: 2, timeout: 25000 });
+  const text = await fetchJSON(url, { retries: 2, timeout: 25000, expect: 'text' });
+  if (!text || !String(text).trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null; // page d'erreur ou réponse tronquée
+  }
 }
 
 /** mygene.info : UniProt (Swiss-Prot) et HGNC, à partir du transcrit RefSeq. */

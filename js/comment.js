@@ -109,6 +109,8 @@ const T = {
     predPath: 'en faveur du caractère pathogène de la variation ({del}).',
     predBenign: 'en faveur du caractère bénin de la variation ({tol}).',
     predDiscordant: 'discordants (délétère : {del} ; toléré : {tol}).',
+    predDiscordantDelOnly: 'discordants (délétère : {del}).',
+    predDiscordantTolOnly: 'discordants (toléré : {tol}).',
     lof: 'La perte de fonction est un mécanisme connu de pathogénicité de ce gène.',
     conserved: "La variation est située au niveau d'un résidu conservé au cours de l'évolution.",
     // La macro n'écrit pas de point final après le domaine : conservé tel quel.
@@ -141,6 +143,8 @@ const T = {
     predPath: 'in favour of a pathogenic effect of the variant ({del}).',
     predBenign: 'in favour of a benign effect of the variant ({tol}).',
     predDiscordant: 'discordant (deleterious: {del}; tolerated: {tol}).',
+    predDiscordantDelOnly: 'discordant (deleterious: {del}).',
+    predDiscordantTolOnly: 'discordant (tolerated: {tol}).',
     lof: 'Loss of function is a known disease mechanism for this gene.',
     conserved: 'The variant affects a residue that is conserved through evolution.',
     domain: 'It is located in a functional protein domain: {domain}',
@@ -262,11 +266,18 @@ export function buildComment(ctx, opts = {}) {
   // 4 — Prédictions in silico.
   const verdict = predictionVerdict(ctx.predictions);
   if (verdict.any) {
+    // Une liste vide n'est jamais écrite : la macro produisait « toléré : » suivi de
+    // rien. Le verdict lui-même reste celui de la macro.
+    const discordant = verdict.del.length && verdict.tol.length
+      ? fill(t.predDiscordant, { del: verdict.del.join(', '), tol: verdict.tol.join(', ') })
+      : verdict.del.length
+        ? fill(t.predDiscordantDelOnly, { del: verdict.del.join(', ') })
+        : fill(t.predDiscordantTolOnly, { tol: verdict.tol.join(', ') });
     const body = verdict.kind === 'pathogenic'
       ? fill(t.predPath, { del: verdict.del.join(', ') })
       : verdict.kind === 'benign'
         ? fill(t.predBenign, { tol: verdict.tol.join(', ') })
-        : fill(t.predDiscordant, { del: verdict.del.join(', '), tol: verdict.tol.join(', ') });
+        : discordant;
     lines.push(t.predPrefix + body);
   }
 

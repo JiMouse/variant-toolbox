@@ -4,7 +4,7 @@
 // La normalisation passe toujours par VEP : c'est elle qui fixe gène, transcrit,
 // conséquence, exon/intron et les nomenclatures c./p./g.
 
-import { vepHgvs, vepVcf, refBase } from './sources.js';
+import { vepHgvs, vepVcf, refBase, refSeq } from './sources.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -143,6 +143,89 @@ async function vcfFromVep(item) {
   return { chr, pos: start - 1, ref: anchor + a, alt: anchor + b };
 }
 
+/**
+ * Lecteur de référence avec fenêtre en cache : évite un appel réseau par base
+ * pendant la normalisation.
+ */
+function refReader(chr, from, to) {
+  let start = from;
+  let seq = null;
+  return async (pos) => {
+    if (seq === null || pos < start) {
+      start = Math.max(1, Math.min(pos, from) - 60);
+      seq = await refSeq(chr, start, Math.max(to, start + 120));
+      if (!seq) throw new Error('REF_UNAVAILABLE');
+    }
+    const i = pos - start;
+    if (i < 0 || i >= seq.length) {
+      start = Math.max(1, pos - 60);
+      seq = await refSeq(chr, start, pos + 60);
+      if (!seq) throw new Error('REF_UNAVAILABLE');
+      return seq[pos - start];
+    }
+    return seq[i];
+  };
+}
+
+/**
+ * Normalisation VCF (alignement à gauche), algorithme de vt normalize.
+ *
+ * Indispensable : HGVS décale les indels vers la **droite** dans une répétition,
+ * alors que VCF — donc gnomAD, SpliceAI, InterVar, Decipher, Varsome, Franklin —
+ * les aligne à **gauche**. Sans cette étape, CFTR p.Phe508del sortait en
+ * 7-117559591-TCTT-T, introuvable dans gnomAD, et le commentaire annonçait une
+ * variation « absente des bases de données » pour la variation CF la plus fréquente
+ * (forme correcte : 7-117559590-ATCT-A, AF ≈ 1,2 %).
+ */
+export async function normalizeVcf(chr, pos, ref, alt, getBase) {
+  let p = Number(pos);
+  let r = String(ref).toUpperCase();
+  let a = String(alt).toUpperCase();
+  if (r.length === a.length) return { pos: p, ref: r, alt: a }; // substitution : rien à faire
+
+  for (let guard = 0; guard < 1000; guard++) {
+    if (r.length > 1 && a.length > 1 && r[r.length - 1] === a[a.length - 1]) {
+      r = r.slice(0, -1);
+      a = a.slice(0, -1);
+      continue;
+    }
+    if ((r.length === 1 || a.length === 1) && r.length !== a.length
+        && r[r.length - 1] === a[a.length - 1] && p > 1) {
+      const b = await getBase(p - 1);
+      if (!b) break;
+      p -= 1;
+      r = b + r.slice(0, -1);
+      a = b + a.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+  while (r.length > 1 && a.length > 1 && r[0] === a[0]) {
+    r = r.slice(1);
+    a = a.slice(1);
+    p += 1;
+  }
+  return { pos: p, ref: r, alt: a };
+}
+
+/** HGVS génomique dérivé d'une représentation VCF normalisée. */
+export function hgvsFromVcf(chr, pos, ref, alt) {
+  const c = `chr${chr}`;
+  if (ref.length === 1 && alt.length === 1) return `${c}:g.${pos}${ref}>${alt}`;
+  if (alt.length < ref.length && ref.startsWith(alt)) { // délétion
+    const start = pos + alt.length;
+    const end = pos + ref.length - 1;
+    return start === end ? `${c}:g.${start}del` : `${c}:g.${start}_${end}del`;
+  }
+  if (ref.length < alt.length && alt.startsWith(ref)) { // insertion
+    const start = pos + ref.length - 1;
+    return `${c}:g.${start}_${start + 1}ins${alt.slice(ref.length)}`;
+  }
+  const start = pos;
+  const end = pos + ref.length - 1;
+  return start === end ? `${c}:g.${start}delins${alt}` : `${c}:g.${start}_${end}delins${alt}`;
+}
+
 /** Identifiant MyVariant (HGVS génomique) construit sur les coordonnées normalisées par VEP. */
 export function myVariantId(item) {
   const chr = `chr${item.seq_region_name}`;
@@ -186,11 +269,25 @@ export async function normalize(input) {
   if (!tc) throw new Error('VEP: aucune conséquence de transcrit');
 
   // Coordonnées VCF : la saisie telle quelle si elle était en VCF, sinon reconstruite.
-  const vcf = parsed.kind === 'vcf'
+  let vcf = parsed.kind === 'vcf'
     ? { chr: parsed.chr, pos: parsed.pos, ref: parsed.ref, alt: parsed.alt }
     : (await vcfFromVep(item)) || {
       chr: String(item.seq_region_name), pos: item.start, ref: null, alt: null,
     };
+
+  // Alignement à gauche des indels : gnomAD, MyVariant, SpliceAI et InterVar
+  // attendent la forme VCF, pas la forme HGVS décalée à droite.
+  let vcfNormalised = false;
+  if (vcf.ref && vcf.alt && vcf.ref.length !== vcf.alt.length) {
+    try {
+      const reader = refReader(vcf.chr, vcf.pos - 60, vcf.pos + vcf.ref.length + 60);
+      const n = await normalizeVcf(vcf.chr, vcf.pos, vcf.ref, vcf.alt, reader);
+      vcfNormalised = n.pos !== vcf.pos || n.ref !== vcf.ref;
+      vcf = { chr: vcf.chr, ...n };
+    } catch (e) {
+      // Référence indisponible : on garde la forme non normalisée plutôt que d'échouer.
+    }
+  }
 
   const maneTc = (item.transcript_consequences || []).find((t) => t.mane_select
     && /^NM_/.test(t.transcript_id || ''));
@@ -209,7 +306,10 @@ export async function normalize(input) {
     alt: vcf.alt,
     pseudoVcf: vcf.ref ? `${vcf.chr}-${vcf.pos}-${vcf.ref}-${vcf.alt}` : null,
     gnomadId: vcf.ref ? `${vcf.chr}-${vcf.pos}-${vcf.ref}-${vcf.alt}` : null,
-    myVariantId: myVariantId(item),
+    vcfNormalised,
+    // MyVariant indexe la forme alignée à gauche ; la nomenclature du compte rendu
+    // garde la forme HGVS (décalée à droite dans une répétition), celle de VEP.
+    myVariantId: vcf.ref ? hgvsFromVcf(vcf.chr, vcf.pos, vcf.ref, vcf.alt) : myVariantId(item),
     genomicHgvs: genomicHgvs(item),
     gene: tc.gene_symbol || parsed.gene || null,
     transcript: tc.transcript_id || null,
