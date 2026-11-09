@@ -161,6 +161,11 @@ button[disabled] { opacity: 0.55; cursor: default; }
   border: 1px solid currentColor;
 }
 .message.error { --warn: var(--del); --warn-bg: transparent; }
+.message.progress {
+  --warn: var(--muted);
+  --warn-bg: transparent;
+  font-variant-numeric: tabular-nums;
+}
 
 /* — Données — */
 

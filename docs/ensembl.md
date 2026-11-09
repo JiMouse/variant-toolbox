@@ -73,7 +73,43 @@ source en échec.
 `refSeq()` tente Ensembl puis UCSC (vérifié : les deux renvoient `CAGC` pour
 `17:7675085-7675088`).
 
-## 3. Ce qui reste un point de défaillance unique
+## 3. Ensembl ne tombe pas : il pend
+
+Le vrai mode de défaillance observé n'est pas l'erreur franche mais la **connexion
+qui ne répond jamais**. Trace d'une analyse de `NM_000546.6:c.524G>A` :
+
+```
+ 40024ms +40015ms  ERR(AbortError)   /vep/human/hgvs/...
+ 45072ms + 4247ms  503               /vep/human/hgvs/...
+ 86677ms +40004ms  ERR(AbortError)   /vep/human/hgvs/...
+103554ms +13675ms  200               /vep/human/hgvs/...
+```
+
+**103 s rien que pour la normalisation** — tout le reste de la chaîne prenait 2,2 s.
+Deux causes cumulées : un délai d'expiration de 40 s (absurde pour un service qui
+répond en 0,2 s quand il va bien), et une politique de réessai qui attendait
+l'expiration complète avant de songer au repli.
+
+Corrections :
+
+- **délai VEP ramené à 8 s**, 2 réessais ;
+- **course (hedging)** : VEP est lancé, et si rien n'est revenu au bout de **2,5 s**,
+  VariantValidator est lancé *en parallèle* — la première réponse gagne. Plus besoin
+  d'attendre l'échec de VEP pour basculer ;
+- **plafond global de 60 s** par étape, et un **compteur d'avancement** dans
+  l'interface (« Normalisation du variant… (3 s) », « Ensembl tarde à répondre —
+  repli sur VariantValidator… ») : la page ne peut plus paraître figée ;
+- délais des autres sources ramenés à 12–20 s.
+
+Résultat mesuré sur le même variant :
+
+| Situation | Avant | Après |
+|---|---|---|
+| Ensembl sain | ~3 s | **2,9 s** |
+| Ensembl lent (cas réel) | **103 s** | **5–6 s** (repli) |
+| Ensembl qui pend indéfiniment | jamais de réponse utile | **3,2 s** (repli) |
+
+## 4. Ce qui reste un point de défaillance unique
 
 Rien ne remplace VEP pour le **terme de conséquence** parmi les services appelables
 depuis un navigateur. Le repli le déduit, mais c'est une heuristique : les huit motifs

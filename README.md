@@ -66,10 +66,13 @@ refusent les appels depuis une page web. Le score CADD phred vient donc de MyVar
 (le même champ que lisait la macro) et le bouton CADD reste un lien.
 
 **Ensembl** : les deux formes de saisie passent par `GET /vep/human/hgvs`, mesuré à
-14/14 là où `GET /vep/human/region` échoue 8 fois sur 14. Si Ensembl est injoignable,
-la normalisation bascule automatiquement sur **VariantValidator** (sortie vérifiée
-identique à VEP) et la séquence de référence sur l'**API REST d'UCSC**. Mesures,
-alternatives écartées et limites du repli : [docs/ensembl.md](docs/ensembl.md).
+14/14 là où `GET /vep/human/region` échoue 8 fois sur 14. Ensembl ne tombe pas
+franchement, il **laisse pendre la connexion** : VEP est donc lancé avec un délai de
+8 s, et si rien n'est revenu au bout de 2,5 s **VariantValidator est lancé en
+parallèle**, la première réponse gagnant la course. La séquence de référence bascule
+de même sur l'**API REST d'UCSC**. Une analyse qui prenait 103 s pendant un épisode
+de lenteur en prend 5 à 6. L'interface affiche un compteur d'avancement et plafonne
+chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ensembl.md).
 
 ## Seuils
 

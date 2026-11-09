@@ -9,7 +9,7 @@ const VEP_OPTS = 'refseq=1&hgvs=1&numbers=1&domains=1&mane=1&canonical=1&variant
 export function vepHgvs(hgvs) {
   const url = `https://rest.ensembl.org/vep/human/hgvs/${encodeURIComponent(hgvs)}`
     + `?content-type=application/json&${VEP_OPTS}`;
-  return fetchJSON(url, { retries: 5, timeout: 40000 });
+  return fetchJSON(url, { retries: 2, timeout: 8000 });
 }
 
 /**
@@ -53,7 +53,7 @@ export async function refSeq(chr, start, end) {
   try {
     const url = `https://rest.ensembl.org/sequence/region/human/${chr}:${start}..${end}`
       + '?content-type=application/json&coord_system_version=GRCh38';
-    const r = await fetchJSON(url, { retries: 2 });
+    const r = await fetchJSON(url, { retries: 1, timeout: 8000 });
     if (r && r.seq) return r.seq.toUpperCase();
   } catch (e) {
     // on tente UCSC
@@ -73,7 +73,7 @@ export async function refBase(chr, pos) {
 /** MyVariant.info : dbNSFP, CADD, ClinVar, gnomAD v2.1.1 exomes. `id` est un HGVS génomique. */
 export function myVariant(id) {
   const url = `https://myvariant.info/v1/variant/${encodeURIComponent(id)}?assembly=hg38&fields=all`;
-  return fetchJSON(url, { retries: 3, timeout: 35000 });
+  return fetchJSON(url, { retries: 2, timeout: 12000 });
 }
 
 /** gnomAD v4.1 — exomes + génomes, AC / AN / AF / homozygotes. */
@@ -89,8 +89,8 @@ export function gnomad4(variantId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables: { v: variantId } }),
-    retries: 3,
-    timeout: 35000,
+    retries: 2,
+    timeout: 12000,
   });
 }
 
@@ -130,7 +130,7 @@ export async function spliceai(variantId, distance = 50) {
 export async function intervar(chr, pos, ref, alt) {
   const url = `https://wintervar.wglab.org/api_new.php?queryType=position&chr=${chr}`
     + `&pos=${pos}&ref=${ref}&alt=${alt}&build=hg38`;
-  const text = await fetchJSON(url, { retries: 2, timeout: 25000, expect: 'text' });
+  const text = await fetchJSON(url, { retries: 1, timeout: 12000, expect: 'text' });
   if (!text || !String(text).trim()) return null;
   try {
     return JSON.parse(text);
@@ -162,13 +162,13 @@ export function monarchDiseases(hgncId, limit = 20) {
     + `?subject=HGNC:${encodeURIComponent(hgncId)}`
     + '&category=biolink%3ACausalGeneToDiseaseAssociation'
     + `&limit=${limit}`;
-  return fetchJSON(url, { retries: 2, timeout: 25000 });
+  return fetchJSON(url, { retries: 1, timeout: 12000 });
 }
 
 /** Monarch : fiche maladie — numéro MIM (mappings) et mode de transmission (terme HPO). */
 export function monarchDisease(mondoId) {
   const url = `https://api.monarchinitiative.org/v3/api/entity/${encodeURIComponent(mondoId)}`;
-  return fetchJSON(url, { retries: 2, timeout: 25000 });
+  return fetchJSON(url, { retries: 1, timeout: 12000 });
 }
 
 /** OMIM — tenté seulement si une clé est saisie. Sans CORS : échoue en général depuis un navigateur. */
@@ -183,7 +183,7 @@ export async function mobiDetailsId(hgvs, apiKey) {
   const clean = hgvs.includes('(') ? hgvs.replace(/\([^)]*\)/, '') : hgvs;
   const url = 'https://mobidetails.chu-montpellier.fr/api/variant/create'
     + `?variant_chgvs=${encodeURIComponent(clean)}&caller=cli&api_key=${encodeURIComponent(apiKey)}`;
-  let r = await fetchJSON(url, { retries: 1, timeout: 30000 });
+  let r = await fetchJSON(url, { retries: 1, timeout: 15000 });
   // MobiDetails impose sa propre version de transcrit : « (1) for NM_… does not match MobiDetail's (2) ».
   const err = r && (r.mobidetails_error || r.error);
   if (err && String(err).includes('does not match MobiDetail')) {
@@ -192,7 +192,7 @@ export async function mobiDetailsId(hgvs, apiKey) {
       const retryHgvs = clean.replace(`.${m[1]}:`, `.${m[2]}:`);
       const retryUrl = 'https://mobidetails.chu-montpellier.fr/api/variant/create'
         + `?variant_chgvs=${encodeURIComponent(retryHgvs)}&caller=cli&api_key=${encodeURIComponent(apiKey)}`;
-      r = await fetchJSON(retryUrl, { retries: 1, timeout: 30000 });
+      r = await fetchJSON(retryUrl, { retries: 1, timeout: 15000 });
     }
   }
   return r && r.mobidetails_id ? String(r.mobidetails_id) : null;
@@ -214,14 +214,14 @@ const VV = 'https://rest.variantvalidator.org/VariantValidator';
 export function variantValidator(desc, selectTranscripts = 'mane') {
   const url = `${VV}/variantvalidator/GRCh38/${encodeURIComponent(desc)}/${selectTranscripts}`
     + '?content_type=application/json';
-  return fetchJSON(url, { retries: 2, timeout: 40000 });
+  return fetchJSON(url, { retries: 1, timeout: 20000 });
 }
 
 /** Structure exonique d'un transcrit — pour le total d'exons (« 5/11 »). */
 export function variantValidatorTranscript(transcript) {
   const url = `${VV}/tools/gene2transcripts/${encodeURIComponent(transcript)}`
     + '?content_type=application/json';
-  return fetchJSON(url, { retries: 2, timeout: 40000 });
+  return fetchJSON(url, { retries: 1, timeout: 20000 });
 }
 
 /** Accessions RefSeq des chromosomes hg38, pour interroger VariantValidator en génomique. */

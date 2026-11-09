@@ -8,6 +8,7 @@ import {
   vepHgvs, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
   variantValidator, variantValidatorTranscript, NC_ACCESSION,
 } from './sources.js';
+import { hedge } from './util.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -245,35 +246,37 @@ export function genomicHgvs(item) {
  * Normalise une saisie en un objet variant complet.
  * @returns {Promise<object>} chr, pos, ref, alt, pseudoVcf, gene, transcript, isMane, …
  */
-export async function normalize(input) {
+export async function normalize(input, { onProgress = null } = {}) {
   const parsed = typeof input === 'string' ? parseInput(input) : input;
   if (parsed.kind === 'empty') throw new Error('EMPTY_INPUT');
   if (parsed.kind === 'unknown') throw new Error('UNRECOGNISED_INPUT');
 
   const wantedTranscript = parsed.kind === 'hgvs' ? parsed.hgvs.split(':')[0] : null;
 
-  let vep;
-  try {
-    vep = parsed.kind === 'hgvs'
+  // VEP d'abord, VariantValidator lancé en parallèle s'il tarde : Ensembl laisse
+  // pendre la connexion plutôt que d'échouer franchement, et on rendait la main
+  // au bout de 100 s là où le repli répondait en moins d'une seconde.
+  const viaVep = async () => {
+    const vep = parsed.kind === 'hgvs'
       ? await vepHgvs(parsed.hgvs)
       : await vepVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt);
-  } catch (vepErr) {
-    // Ensembl injoignable : on repasse par VariantValidator plutôt que de tout perdre.
-    try {
-      return await normalizeViaVariantValidator(parsed);
-    } catch (vvErr) {
-      throw new Error(`VEP: ${vepErr.message} — repli VariantValidator: ${vvErr.message}`);
-    }
+    const it = Array.isArray(vep) ? vep[0] : vep;
+    if (!it || it.error) throw new Error(`VEP: ${(it && it.error) || 'aucun résultat'}`);
+    return it;
+  };
+
+  let item;
+  try {
+    item = await hedge(viaVep, () => normalizeViaVariantValidator(parsed), {
+      delay: 2500,
+      onSecondary: () => { if (onProgress) onProgress('fallback'); },
+    });
+  } catch (e) {
+    throw new Error(e && e.message ? e.message : String(e));
   }
 
-  const item = Array.isArray(vep) ? vep[0] : vep;
-  if (!item || item.error) {
-    try {
-      return await normalizeViaVariantValidator(parsed);
-    } catch (vvErr) {
-      throw new Error(`VEP: ${(item && item.error) || 'aucun résultat'}`);
-    }
-  }
+  // La course peut être gagnée par le repli, qui renvoie déjà un variant complet.
+  if (item && item.source === 'VariantValidator') return item;
 
   const { tc, selectedBy } = pickTranscript(item, wantedTranscript);
   if (!tc) throw new Error('VEP: aucune conséquence de transcrit');

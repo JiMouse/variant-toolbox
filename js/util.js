@@ -97,3 +97,63 @@ export async function settleAll(tasks) {
   });
   return { out, errors };
 }
+
+/**
+ * Lance `primary`, puis `secondary` si `primary` n'a pas répondu au bout de `delay`
+ * (ou s'il a échoué avant). Renvoie la **première** réponse obtenue.
+ *
+ * Ensembl ne tombe pas franchement : il laisse pendre la connexion. Attendre
+ * l'expiration d'un délai puis réessayer coûtait jusqu'à 100 s avant d'obtenir une
+ * réponse, alors que le service de repli, lui, répondait en moins d'une seconde.
+ *
+ * @param {() => Promise} primary      source préférée
+ * @param {() => Promise} secondary    source de repli
+ * @param {object} opts  { delay, onSecondary } — onSecondary est appelé quand le
+ *                       repli démarre, pour prévenir l'interface.
+ */
+export function hedge(primary, secondary, { delay = 2500, onSecondary = null } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let primaryErr = null;
+    let secondaryErr = null;
+    let primaryDone = false;
+    let secondaryDone = false;
+    let secondaryStarted = false;
+    let timer = null;
+
+    const win = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+    const maybeFail = () => {
+      if (settled || !primaryDone || !secondaryDone) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      reject(primaryErr || secondaryErr);
+    };
+
+    const startSecondary = () => {
+      if (secondaryStarted || settled) return;
+      secondaryStarted = true;
+      if (onSecondary) {
+        try { onSecondary(); } catch (e) { /* le rapport d'avancement ne doit rien casser */ }
+      }
+      Promise.resolve()
+        .then(secondary)
+        .then(win, (e) => { secondaryErr = e; secondaryDone = true; maybeFail(); });
+    };
+
+    Promise.resolve()
+      .then(primary)
+      .then(win, (e) => {
+        primaryErr = e;
+        primaryDone = true;
+        startSecondary(); // échec avant le délai : ne pas attendre
+        maybeFail();
+      });
+
+    timer = setTimeout(startSecondary, delay);
+  });
+}

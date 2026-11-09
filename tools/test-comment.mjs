@@ -5,6 +5,9 @@
 //   node tools/test-comment.mjs
 
 import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js/comment.js';
+import { readFileSync } from 'node:fs';
+import { UI } from '../js/i18n.js';
+import { hedge } from '../js/util.js';
 
 let pass = 0;
 let fail = 0;
@@ -218,6 +221,48 @@ check('ligne 1 = nomenclature', full.split('\n')[0],
   'hg38 chr17:g.7675088C>T NM_000546.6(TP53):c.524G>A p.Arg175His');
 check('ligne 2 vide', full.split('\n')[1], '');
 check('pas d\'espace en fin de ligne', /[ \t]+\n|[ \t]+$/.test(full), false);
+
+/* — Libellés : les deux langues doivent couvrir exactement les mêmes clés — */
+// Une clé absente s'affichait telle quelle dans l'interface (« fallbackSource »).
+const frKeys = Object.keys(UI.fr);
+const enKeys = Object.keys(UI.en);
+check('FR et EN ont le même nombre de clés', frKeys.length, enKeys.length);
+check('aucune clé EN absente du FR', enKeys.filter((k) => !(k in UI.fr)).join(',') || '—', '—');
+check('aucune clé FR absente de l\'EN', frKeys.filter((k) => !(k in UI.en)).join(',') || '—', '—');
+const empty = frKeys.filter((k) => !String(UI.fr[k]).trim() || !String(UI.en[k]).trim());
+check('aucun libellé vide', empty.join(',') || '—', '—');
+// Toute clé utilisée par la page ou par app.js doit exister dans les deux langues :
+// c'est ce qui manquait quand l'interface affichait « fallbackSource » tel quel.
+const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
+const html = read('../index.html');
+const appjs = read('../js/app.js');
+const used = new Set([
+  ...[...html.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]),
+  ...[...appjs.matchAll(/\bt\(lang,\s*'([^']+)'/g)].map((m) => m[1]),
+]);
+const unknown = [...used].filter((k) => !(k in UI.fr) || !(k in UI.en));
+check('toutes les clés utilisées existent en FR et EN', unknown.join(',') || '—', '—');
+check('des clés sont bien utilisées', used.size > 20, true);
+
+/* — Course entre source principale et repli — */
+const later = (v, ms) => () => new Promise((r) => setTimeout(() => r(v), ms));
+const failsAfter = (ms) => () => new Promise((_, rej) => setTimeout(() => rej(new Error('boom')), ms));
+const never = () => new Promise(() => {});
+
+check('la principale gagne si elle répond avant le délai',
+  await hedge(later('A', 10), later('B', 10), { delay: 200 }), 'A');
+check('le repli gagne si la principale pend',
+  await hedge(never, later('B', 10), { delay: 30 }), 'B');
+check('le repli démarre tout de suite si la principale échoue vite',
+  await hedge(failsAfter(5), later('B', 10), { delay: 5000 }), 'B');
+check('la principale gagne même si le repli a démarré',
+  await hedge(later('A', 60), later('B', 500), { delay: 10 }), 'A');
+let hedgeErr = null;
+try { await hedge(failsAfter(5), failsAfter(10), { delay: 5 }); } catch (e) { hedgeErr = e.message; }
+check('les deux échouent → rejet', hedgeErr, 'boom');
+let signalled = false;
+await hedge(never, later('B', 5), { delay: 10, onSecondary: () => { signalled = true; } });
+check('onSecondary prévient du démarrage du repli', signalled, true);
 
 console.log(`\n${pass} vérifications passées, ${fail} en échec`);
 process.exit(fail ? 1 : 0);

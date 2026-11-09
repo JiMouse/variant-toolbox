@@ -273,13 +273,51 @@ function message(text, kind = 'info') {
   if (!text) { el.hidden = true; el.textContent = ''; return; }
   el.hidden = false;
   el.textContent = text;
-  el.className = `message${kind === 'error' ? ' error' : ''}`;
+  el.className = `message${kind === 'error' ? ' error' : ''}${kind === 'progress' ? ' progress' : ''}`;
 }
 
 function setBusy(on) {
   busy = on;
   $('submitBtn').disabled = on;
   $('submitBtn').textContent = t(lang, on ? 'analysing' : 'analyse');
+}
+
+// Compteur d'avancement : une analyse peut durer quelques secondes, et plus encore
+// quand une source tarde. Sans retour visible, la page paraît figée.
+let progressTimer = null;
+let progressStage = 'progressNormalising';
+let progressStart = 0;
+
+function startProgress() {
+  progressStart = Date.now();
+  progressStage = 'progressNormalising';
+  const tick = () => {
+    const secs = Math.round((Date.now() - progressStart) / 1000);
+    message(t(lang, progressStage, { s: secs }), 'progress');
+  };
+  tick();
+  progressTimer = setInterval(tick, 1000);
+}
+
+function setProgressStage(stage) {
+  progressStage = stage;
+  if (progressTimer) {
+    const secs = Math.round((Date.now() - progressStart) / 1000);
+    message(t(lang, progressStage, { s: secs }), 'progress');
+  }
+}
+
+function stopProgress() {
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = null;
+}
+
+/** Garde-fou global : une analyse ne doit jamais rester suspendue indéfiniment. */
+function withDeadline(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('DEADLINE')), ms)),
+  ]);
 }
 
 /* ---------- analyse ---------- */
@@ -293,12 +331,18 @@ async function run() {
 
   setBusy(true);
   message('');
+  startProgress();
   try {
-    const variant = await normalize(parsed);
-    ctx = await annotate(variant, {
+    const variant = await withDeadline(
+      normalize(parsed, { onProgress: () => setProgressStage('progressFallback') }),
+      60000,
+    );
+    setProgressStage('progressAnnotating');
+    ctx = await withDeadline(annotate(variant, {
       omimKey: store.get('vt.omimKey') || null,
       mobiKey: store.get('vt.mobiKey') || null,
-    });
+    }), 60000);
+    stopProgress();
     render();
 
     const notes = [];
@@ -310,8 +354,10 @@ async function run() {
     message(notes.join(' · '));
     store.set('vt.lastQuery', query);
   } catch (e) {
+    stopProgress();
     const msg = String(e && e.message ? e.message : e);
-    if (msg === 'EMPTY_INPUT') message(t(lang, 'errEmpty'), 'error');
+    if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
+    else if (msg === 'EMPTY_INPUT') message(t(lang, 'errEmpty'), 'error');
     else if (/Failed to fetch|NetworkError|load failed/i.test(msg)) message(t(lang, 'errNetwork'), 'error');
     else if (msg === 'UNRECOGNISED_INPUT') message(t(lang, 'errUnknown'), 'error');
     else if (msg.startsWith('VEP')) message(t(lang, 'errVep', { msg }), 'error');
@@ -319,6 +365,7 @@ async function run() {
     $('results').hidden = true;
     ctx = null;
   } finally {
+    stopProgress();
     setBusy(false);
   }
 }
