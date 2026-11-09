@@ -295,7 +295,8 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
   const mv = out.mv && !out.mv.__notFound ? out.mv : null;
   const hit = out.gene && out.gene.hits && out.gene.hits[0] ? out.gene.hits[0] : null;
   const uniprot = hit ? (get(hit, 'uniprot.Swiss-Prot') || null) : null;
-  const hgncId = hit ? (hit.HGNC ? String(hit.HGNC) : null) : null;
+  // VariantValidator fournit HGNC et GeneID : utile en repli si mygene ou E-utilities tombent.
+  const hgncId = (hit && hit.HGNC ? String(hit.HGNC) : null) || variant.hgncId || null;
   const geneMim = hit ? (Array.isArray(hit.MIM) ? hit.MIM[0] : hit.MIM) : null;
 
   let phenotypes = { source: null, phenotypes: [] };
@@ -307,6 +308,8 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
 
   return {
     variant,
+    source: variant.source || 'VEP',
+    degraded: variant.degraded || null,
     notFoundInMyVariant: Boolean(out.mv && out.mv.__notFound),
     predictions: buildPredictions(mv, out.splice),
     conservation: buildConservation(mv),
@@ -319,7 +322,7 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
       uniprot: first(uniprot),
       hgncId,
       mim: geneMim,
-      ncbiGeneId: out.geneId || null,
+      ncbiGeneId: out.geneId || variant.ncbiGeneId || null,
     },
     phenotypes,
     mobiDetailsId: out.mobi || null,

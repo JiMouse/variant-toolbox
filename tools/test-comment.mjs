@@ -104,15 +104,38 @@ check('bénin si tolérés majoritaires et REVEL concordant',
 check('discordant si REVEL et MetaLR divergent',
   predictionVerdict([pred('REVEL', 'del', 0.9), pred('MetaLR', 'tol', 0.1), pred('CADD', 'del', 25)]).kind,
   'discordant');
-// Quirk VBA conservé : UBound vaut 0 pour une liste vide comme pour une liste à un élément.
-check('un seul délétère contre zéro toléré reste discordant',
+// Corrigé : un seul délétère contre zéro toléré conclut maintenant « pathogène »
+// (l'ancien UBound du VBA donnait 0 pour une liste vide comme pour une liste de 1).
+// Garde-fou : un seul outil n'affirme pas de direction (cas p.Phe508del, SpliceAI seul).
+check('un seul délétère → discordant',
   predictionVerdict([pred('CADD', 'del', 32)]).kind, 'discordant');
-contains('pas de liste vide dans la phrase',
+check('un seul toléré → discordant',
+  predictionVerdict([pred('SpliceAI', 'tol', 0.01)]).kind, 'discordant');
+check('deux délétères → pathogène',
+  predictionVerdict([pred('CADD', 'del', 32), pred('SpliceAI', 'del', 0.9)]).kind, 'pathogenic');
+check('deux tolérés → bénin',
+  predictionVerdict([pred('CADD', 'tol', 3), pred('SpliceAI', 'tol', 0.01)]).kind, 'benign');
+// Corrigé : REVEL et MetaLR ne notant que les faux-sens, leur absence ne doit plus
+// forcer « discordants » pour les variations nulles et d'épissage.
+check('épissage : CADD + SpliceAI délétères, méta n.a. → pathogène',
+  predictionVerdict([pred('CADD', 'del', 32), pred('SpliceAI', 'del', 0.93)]).kind,
+  'pathogenic');
+check('méta disponibles et contradictoires → discordant',
+  predictionVerdict([pred('SIFT', 'del', 0), pred('CADD', 'del', 25),
+    pred('REVEL', 'del', 0.9), pred('MetaLR', 'tol', 0.1)]).kind, 'discordant');
+check('REVEL toléré mais les autres délétères → discordant',
+  predictionVerdict([pred('SIFT', 'del', 0), pred('CADD', 'del', 25),
+    pred('REVEL', 'tol', 0.2)]).kind, 'discordant');
+check('délétères et tolérés à égalité → discordant',
+  predictionVerdict([pred('CADD', 'del', 32), pred('SpliceAI', 'tol', 0.01)]).kind,
+  'discordant');
+contains('épissage sans méta → phrase pathogène',
   fr(ctx({ predictions: [pred('CADD', 'del', 32), pred('SpliceAI', 'del', 0.93)] })),
-  'discordants (délétère : CADD, SpliceAI).');
-contains('pas de « toléré :  » vide',
-  fr(ctx({ predictions: [pred('CADD', 'del', 32), pred('SpliceAI', 'del', 0.93)] })),
-  'toléré :', false);
+  'en faveur du caractère pathogène de la variation (CADD, SpliceAI).');
+// Le rendu « discordants » ne doit jamais afficher de liste vide.
+contains('pas de « toléré :  » vide quand discordant',
+  fr(ctx({ predictions: [pred('REVEL', 'del', 0.9), pred('MetaLR', 'tol', 0.1)] })),
+  'discordants (délétère : REVEL ; toléré : MetaLR).');
 contains('phrase absente si aucune prédiction',
   fr(ctx({ predictions: [] })), 'outils de prédictions', false);
 

@@ -4,7 +4,10 @@
 // La normalisation passe toujours par VEP : c'est elle qui fixe gène, transcrit,
 // conséquence, exon/intron et les nomenclatures c./p./g.
 
-import { vepHgvs, vepVcf, refBase, refSeq } from './sources.js';
+import {
+  vepHgvs, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
+  variantValidator, variantValidatorTranscript, NC_ACCESSION,
+} from './sources.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -208,22 +211,12 @@ export async function normalizeVcf(chr, pos, ref, alt, getBase) {
   return { pos: p, ref: r, alt: a };
 }
 
-/** HGVS génomique dérivé d'une représentation VCF normalisée. */
+/**
+ * HGVS génomique dérivé d'une représentation VCF normalisée, préfixé « chr »
+ * (forme attendue par MyVariant.info). Même construction que pour VEP, au préfixe près.
+ */
 export function hgvsFromVcf(chr, pos, ref, alt) {
-  const c = `chr${chr}`;
-  if (ref.length === 1 && alt.length === 1) return `${c}:g.${pos}${ref}>${alt}`;
-  if (alt.length < ref.length && ref.startsWith(alt)) { // délétion
-    const start = pos + alt.length;
-    const end = pos + ref.length - 1;
-    return start === end ? `${c}:g.${start}del` : `${c}:g.${start}_${end}del`;
-  }
-  if (ref.length < alt.length && alt.startsWith(ref)) { // insertion
-    const start = pos + ref.length - 1;
-    return `${c}:g.${start}_${start + 1}ins${alt.slice(ref.length)}`;
-  }
-  const start = pos;
-  const end = pos + ref.length - 1;
-  return start === end ? `${c}:g.${start}delins${alt}` : `${c}:g.${start}_${end}delins${alt}`;
+  return `chr${genomicHgvsFromVcf(chr, pos, ref, alt)}`;
 }
 
 /** Identifiant MyVariant (HGVS génomique) construit sur les coordonnées normalisées par VEP. */
@@ -258,12 +251,29 @@ export async function normalize(input) {
   if (parsed.kind === 'unknown') throw new Error('UNRECOGNISED_INPUT');
 
   const wantedTranscript = parsed.kind === 'hgvs' ? parsed.hgvs.split(':')[0] : null;
-  const vep = parsed.kind === 'hgvs'
-    ? await vepHgvs(parsed.hgvs)
-    : await vepVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt);
+
+  let vep;
+  try {
+    vep = parsed.kind === 'hgvs'
+      ? await vepHgvs(parsed.hgvs)
+      : await vepVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt);
+  } catch (vepErr) {
+    // Ensembl injoignable : on repasse par VariantValidator plutôt que de tout perdre.
+    try {
+      return await normalizeViaVariantValidator(parsed);
+    } catch (vvErr) {
+      throw new Error(`VEP: ${vepErr.message} — repli VariantValidator: ${vvErr.message}`);
+    }
+  }
 
   const item = Array.isArray(vep) ? vep[0] : vep;
-  if (!item || item.error) throw new Error(`VEP: ${(item && item.error) || 'aucun résultat'}`);
+  if (!item || item.error) {
+    try {
+      return await normalizeViaVariantValidator(parsed);
+    } catch (vvErr) {
+      throw new Error(`VEP: ${(item && item.error) || 'aucun résultat'}`);
+    }
+  }
 
   const { tc, selectedBy } = pickTranscript(item, wantedTranscript);
   if (!tc) throw new Error('VEP: aucune conséquence de transcrit');
@@ -329,6 +339,162 @@ export async function normalize(input) {
     aminoAcids: tc.amino_acids || null,
     domains: tc.domains || [],
     rsid: item.id && /^rs\d+$/.test(item.id) ? item.id : null,
+    source: 'VEP',
+    degraded: null,
     vepRaw: item,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Repli VariantValidator
+ * ------------------------------------------------------------------ */
+
+/**
+ * Conséquence déduite des nomenclatures, quand VEP n'est pas joignable.
+ * Volontairement prudente : si le motif n'est pas reconnu avec certitude, on
+ * renvoie `null` et le commentaire **omet** la phrase de type plutôt que de
+ * risquer un type faux. L'interface signale alors la source de repli.
+ */
+export function inferConsequence(hgvsc, hgvsp) {
+  const c = String(hgvsc || '');
+  const p = String(hgvsp || '');
+  const cPart = c.includes(':') ? c.split(':').slice(1).join(':') : c;
+
+  // Épissage canonique : ±1 et ±2 d'une bordure d'intron.
+  const splice = cPart.match(/[+-](\d+)[ACGT>_a-z]/);
+  if (/\+[12][ACGT]?>/.test(cPart) || /\+[12]_/.test(cPart)) return 'splice_donor';
+  if (/-[12][ACGT]?>/.test(cPart) || /-[12]_/.test(cPart)) return 'splice_acceptor';
+  if (splice) return 'intronic';
+
+  if (/fsTer|fs\b|fs$/i.test(p)) return 'frameshift';
+  if (/Ter\d*\)?$/.test(p) && !/fs/i.test(p)) return 'nonsense';
+  if (/p\.\(?=\)?$|p\.\(?[A-Za-z]{3}\d+=\)?$/.test(p)) return 'synonymous';
+  if (/^p\.\(?Met1\b/.test(p)) return 'start_lost';
+  if (/del$|del\b/.test(cPart) && /del\)?$/.test(p)) return 'inframe';
+  if (/ins/.test(cPart) && /ins/i.test(p)) return 'inframe';
+  // Faux-sens : trois lettres, position, trois lettres différentes.
+  const mis = p.match(/p\.\(?([A-Za-z]{3})(\d+)([A-Za-z]{3})\)?$/);
+  if (mis && mis[1] !== mis[3] && mis[3] !== 'Ter') return 'missense';
+  return null;
+}
+
+/** Nombre total d'exons du transcrit, via gene2transcripts (pour « 5/11 »). */
+async function exonTotal(transcript) {
+  try {
+    const r = await variantValidatorTranscript(transcript);
+    const list = Array.isArray(r) ? r : [r];
+    for (const entry of list) {
+      for (const tx of (entry && entry.transcripts) || []) {
+        if (tx.reference !== transcript) continue;
+        const spans = tx.genomic_spans || {};
+        // Privilégier l'accession GRCh38 (NC_…\.1[1-9]) présente dans NC_ACCESSION.
+        const wanted = new Set(Object.values(NC_ACCESSION));
+        const key = Object.keys(spans).find((k) => wanted.has(k)) || Object.keys(spans)[0];
+        const exons = key && spans[key] && spans[key].exon_structure;
+        if (exons && exons.length) return exons.length;
+      }
+    }
+  } catch (e) { /* total inconnu : on affichera le seul numéro d'exon */ }
+  return null;
+}
+
+/**
+ * Normalise une saisie via VariantValidator, sans Ensembl.
+ * @returns {Promise<object>} même forme que normalize(), avec source: 'VariantValidator'
+ */
+export async function normalizeViaVariantValidator(parsed) {
+  let desc;
+  if (parsed.kind === 'hgvs') {
+    desc = parsed.hgvs;
+  } else {
+    const acc = NC_ACCESSION[parsed.chr];
+    if (!acc) throw new Error('VV: chromosome non pris en charge');
+    // « 17:g.7675088C>T » → « NC_000017.11:g.7675088C>T »
+    const g = genomicHgvsFromVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt);
+    desc = `${acc}:${g.split(':').slice(1).join(':')}`;
+  }
+
+  const r = await variantValidator(desc);
+  if (!r) throw new Error('VV: aucune réponse');
+  const key = Object.keys(r).find((k) => k !== 'flag' && k !== 'metadata');
+  if (!key) throw new Error('VV: aucun résultat');
+  const v = r[key];
+  const warnings = v.validation_warnings || [];
+  if (!v.hgvs_transcript_variant) {
+    throw new Error(`VV: ${warnings[0] || 'variant non validé'}`);
+  }
+
+  const loci = (v.primary_assembly_loci || {}).grch38 || {};
+  const vcfRaw = loci.vcf || {};
+  const chr = String(vcfRaw.chr || '').replace(/^chr/i, '');
+  const hgvsc = v.hgvs_transcript_variant;
+  const transcript = hgvsc.split(':')[0];
+  const hgvspRaw = (v.hgvs_predicted_protein_consequence || {}).tlr || null;
+  // VariantValidator écrit les conséquences protéiques entre parenthèses (prédites),
+  // et « p.? » quand l'effet protéique est indéterminé (épissage, intronique).
+  const hgvspClean = hgvspRaw ? hgvspRaw.replace(/\((.*)\)/, '$1') : null;
+  const hgvsp = hgvspClean && !/:p\.\(?\?\)?$/.test(hgvspClean) ? hgvspClean : null;
+
+  let vcf = { chr, pos: Number(vcfRaw.pos), ref: vcfRaw.ref, alt: vcfRaw.alt };
+  if (vcf.ref && vcf.alt && vcf.ref.length !== vcf.alt.length) {
+    try {
+      const reader = refReader(vcf.chr, vcf.pos - 60, vcf.pos + vcf.ref.length + 60);
+      vcf = { chr: vcf.chr, ...(await normalizeVcf(vcf.chr, vcf.pos, vcf.ref, vcf.alt, reader)) };
+    } catch (e) { /* on garde la forme de VariantValidator, déjà normalisée en principe */ }
+  }
+
+  const exonPos = v.variant_exonic_positions || {};
+  const exonKey = Object.keys(exonPos).find((k) => k === NC_ACCESSION[chr]) || Object.keys(exonPos)[0];
+  const rawExon = exonKey ? (exonPos[exonKey] || {}).start_exon : null;
+
+  // VariantValidator suffixe les positions introniques par « i » : « 22i » = intron 22.
+  const isIntron = rawExon ? /i$/i.test(String(rawExon)) : false;
+  const exonNum = rawExon ? String(rawExon).replace(/i$/i, '') : null;
+  const exons = transcript ? await exonTotal(transcript) : null;
+  // Un transcrit à n exons compte n−1 introns.
+  const total = exons ? (isIntron ? exons - 1 : exons) : null;
+
+  const varType = inferConsequence(hgvsc, hgvsp);
+  const loc = exonNum ? (isIntron ? 'intron' : 'exon') : null;
+
+  const annotations = v.annotations || {};
+  const dbx = annotations.db_xref || {};
+
+  return {
+    input: parsed,
+    source: 'VariantValidator',
+    chr,
+    pos: vcf.pos,
+    ref: vcf.ref,
+    alt: vcf.alt,
+    pseudoVcf: vcf.ref ? `${vcf.chr}-${vcf.pos}-${vcf.ref}-${vcf.alt}` : null,
+    gnomadId: vcf.ref ? `${vcf.chr}-${vcf.pos}-${vcf.ref}-${vcf.alt}` : null,
+    vcfNormalised: false,
+    myVariantId: vcf.ref ? hgvsFromVcf(vcf.chr, vcf.pos, vcf.ref, vcf.alt) : null,
+    genomicHgvs: loci.hgvs_genomic_description
+      ? `chr${chr}:${loci.hgvs_genomic_description.split(':').slice(1).join(':')}`
+      : (vcf.ref ? hgvsFromVcf(vcf.chr, vcf.pos, vcf.ref, vcf.alt) : null),
+    gene: v.gene_symbol || null,
+    transcript,
+    transcriptSelectedBy: parsed.kind === 'hgvs' ? 'input' : 'mane',
+    isMane: Boolean(annotations.mane_select),
+    maneTranscript: annotations.mane_select ? transcript : null,
+    consequenceTerms: varType ? [varType] : [],
+    varType,
+    varTypeNull: isNullVariant(varType),
+    variantClass: null,
+    loc,
+    locNum: exonNum ? String(exonNum) : null,
+    locField: exonNum ? (total ? `${exonNum}/${total}` : String(exonNum)) : null,
+    hgvsc,
+    hgvsp,
+    proteinChange: hgvsp ? hgvsp.split(':').slice(1).join(':') || null : null,
+    aminoAcids: null,
+    domains: [],
+    rsid: null,
+    hgncId: dbx.hgnc ? String(dbx.hgnc).replace('HGNC:', '') : null,
+    ncbiGeneId: dbx.ncbigene ? String(dbx.ncbigene) : null,
+    degraded: varType === null ? 'CONSEQUENCE_UNKNOWN' : null,
+    vepRaw: null,
   };
 }

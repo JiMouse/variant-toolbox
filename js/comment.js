@@ -189,29 +189,51 @@ export function varTypeLabel(v, lang) {
 }
 
 /**
- * Verdict des prédictions, en reproduisant la logique VBA.
- * `UBound(Split(s, ","))` vaut 0 pour une liste vide **et** pour une liste à un seul
- * outil : une liste de 1 ne « gagne » donc jamais contre une liste de 0. Ce
- * comportement est conservé pour que la comparaison avec la macro reste fidèle.
+ * Verdict des prédictions.
+ *
+ * Deux corrections par rapport au VBA :
+ *
+ * 1. `concordant_del` exigeait que **REVEL ou MetaLR** soit délétère. Ces deux
+ *    méta-prédicteurs ne notent que les faux-sens : pour un non-sens, un frameshift
+ *    ou un variant d'épissage ils valent toujours `n.a.`, et le verdict retombait
+ *    donc systématiquement sur « discordants », même avec CADD et SpliceAI tous deux
+ *    délétères. La concordance n'est maintenant exigée que si au moins un des deux
+ *    est réellement disponible.
+ * 2. `UBound(Split(s, ","))` vaut 0 pour une liste vide **comme** pour une liste à un
+ *    seul outil : un seul outil délétère face à zéro toléré ne gagnait jamais. Les
+ *    listes sont maintenant comparées par leur longueur réelle.
+ *
+ * Inchangé : si REVEL et MetaLR sont tous deux disponibles et se contredisent, le
+ * verdict reste « discordants ».
+ *
+ * Garde-fou ajouté : il faut au moins MIN_TOOLS_FOR_DIRECTION outils du côté
+ * gagnant pour affirmer une direction. Sans lui, comparer 1 à 0 suffisait, et
+ * p.Phe508del — seul SpliceAI noté, à 0,01 — ressortait « en faveur du caractère
+ * bénin » dans un compte rendu de classe 5. Mettre 1 pour revenir à la simple
+ * comparaison des effectifs.
  */
+export const MIN_TOOLS_FOR_DIRECTION = 2;
+
 export function predictionVerdict(predictions) {
   const del = predictions.filter((p) => p.verdict === DEL).map((p) => p.name);
   const tol = predictions.filter((p) => p.verdict === TOL).map((p) => p.name);
-  const ubound = (list) => (list.length === 0 ? 0 : list.length - 1);
 
   const revel = predictions.find((p) => p.name === 'REVEL');
   const metalr = predictions.find((p) => p.name === 'MetaLR');
   const revelNA = !revel || revel.verdict === null;
   const metalrNA = !metalr || metalr.verdict === null;
+  const metaAvailable = !revelNA || !metalrNA;
 
   const inDel = (n) => del.includes(n);
+  const inTol = (n) => tol.includes(n);
   const concordant = (inDel('REVEL') === inDel('MetaLR')) || revelNA || metalrNA;
-  const concordantDel = inDel('REVEL') || inDel('MetaLR');
-  const concordantTol = tol.includes('REVEL') || tol.includes('MetaLR');
+  const concordantDel = metaAvailable ? (inDel('REVEL') || inDel('MetaLR')) : true;
+  const concordantTol = metaAvailable ? (inTol('REVEL') || inTol('MetaLR')) : true;
 
   let kind;
-  if (ubound(del) > ubound(tol) && concordant && concordantDel) kind = 'pathogenic';
-  else if (ubound(del) < ubound(tol) && concordant && concordantTol) kind = 'benign';
+  const enough = (list) => list.length >= MIN_TOOLS_FOR_DIRECTION;
+  if (del.length > tol.length && enough(del) && concordant && concordantDel) kind = 'pathogenic';
+  else if (del.length < tol.length && enough(tol) && concordant && concordantTol) kind = 'benign';
   else kind = 'discordant';
 
   return { kind, del, tol, any: del.length > 0 || tol.length > 0 };

@@ -111,6 +111,7 @@ function renderIdentity() {
     [t(lang, 'hgvsg'), `hg38 ${v.genomicHgvs}`, 'mono'],
     [t(lang, 'pseudoVcf'), v.pseudoVcf, 'mono'],
     [t(lang, 'dbsnp'), ctx.rsid, 'mono'],
+    [t(lang, 'normSource'), ctx.source && ctx.source !== 'VEP' ? ctx.source : null],
   ]);
 }
 
@@ -301,6 +302,8 @@ async function run() {
     render();
 
     const notes = [];
+    if (ctx.source && ctx.source !== 'VEP') notes.push(t(lang, 'fallbackSource', { src: ctx.source }));
+    if (ctx.degraded === 'CONSEQUENCE_UNKNOWN') notes.push(t(lang, 'degradedConsequence'));
     if (ctx.notFoundInMyVariant) notes.push(t(lang, 'notFound'));
     const failed = Object.keys(ctx.errors);
     if (failed.length) notes.push(`${t(lang, 'errSources')} : ${failed.join(', ')}`);

@@ -65,6 +65,12 @@ Le détail des tests CORS — et la liste de ce qui reste en **lien seul** — e
 refusent les appels depuis une page web. Le score CADD phred vient donc de MyVariant
 (le même champ que lisait la macro) et le bouton CADD reste un lien.
 
+**Ensembl** : les deux formes de saisie passent par `GET /vep/human/hgvs`, mesuré à
+14/14 là où `GET /vep/human/region` échoue 8 fois sur 14. Si Ensembl est injoignable,
+la normalisation bascule automatiquement sur **VariantValidator** (sortie vérifiée
+identique à VEP) et la séquence de référence sur l'**API REST d'UCSC**. Mesures,
+alternatives écartées et limites du repli : [docs/ensembl.md](docs/ensembl.md).
+
 ## Seuils
 
 Ceux de la macro : CADD > 15, REVEL > 0,5, SpliceAI > 0,5, GERP ≥ 2 = conservé,
@@ -118,14 +124,28 @@ validés reste sans bruit cosmétique :
 
 Ces trois points sont faciles à changer (`js/comment.js`) si vous le souhaitez.
 
-> **Point à arbitrer.** La règle `concordant_del` de la macro exige que **REVEL ou
-> MetaLR** soit délétère pour conclure « en faveur du caractère pathogène ». Or ces deux
-> outils ne notent que les faux-sens : pour un non-sens, un frameshift ou un variant
-> d'épissage ils valent toujours `n.a.`, et le verdict retombe donc **systématiquement
-> sur « discordants »**, même quand CADD et SpliceAI sont tous deux délétères
-> (voir `NM_007294.4:c.5467+1G>A` dans [docs/validation.md](docs/validation.md)).
-> Le comportement de la macro est conservé tel quel — c'est une décision clinique,
-> pas un détail de mise en forme. À changer dans `predictionVerdict()` si besoin.
+### Verdict des prédictions — corrigé
+
+Trois changements dans `predictionVerdict()` (`js/comment.js`) :
+
+1. **`concordant_del`** exigeait que **REVEL ou MetaLR** soit délétère. Ces deux
+   méta-prédicteurs ne notent que les faux-sens : pour un non-sens, un frameshift ou un
+   variant d'épissage ils valent toujours `n.a.`, et le verdict retombait donc
+   **systématiquement sur « discordants »**, même avec CADD et SpliceAI tous deux
+   délétères. La concordance n'est maintenant exigée que si au moins un des deux est
+   réellement disponible. BRCA1 `c.5467+1G>A` (SpliceAI 0,93 ; CADD 32) passe ainsi de
+   « discordants » à « en faveur du caractère pathogène ».
+2. **Comptage** : `UBound(Split(s, ","))` vaut 0 pour une liste vide **comme** pour une
+   liste à un seul outil ; un outil délétère ne gagnait donc jamais contre zéro toléré.
+   Les listes sont comparées par leur longueur réelle.
+3. **Garde-fou** (`MIN_TOOLS_FOR_DIRECTION = 2`) : il faut au moins deux outils du côté
+   gagnant pour affirmer une direction. Sans lui, la correction n° 2 faisait ressortir
+   `p.Phe508del` — seul SpliceAI noté, à 0,01 — comme « en faveur du caractère bénin »
+   dans un compte rendu de classe 5. Mettre la constante à `1` pour revenir à la simple
+   comparaison des effectifs.
+
+Inchangé : si REVEL et MetaLR sont tous deux disponibles et se contredisent, le verdict
+reste « discordants » (MTHFR `c.665C>T`).
 
 **Différences de fond à connaître** :
 - La macro écrivait la fréquence depuis **gnomAD v2.1.1**. Ici le commentaire utilise
@@ -169,6 +189,8 @@ js/app.js           câblage
 tools/validate.mjs  chaîne complète en ligne de commande
 tools/test-comment.mjs  tests du commentaire, sans réseau
 docs/cors.md        tests CORS
+docs/ensembl.md     choix de l'endpoint VEP et solutions de repli
+docs/validation.md  vérifications
 ```
 
 Aucune donnée patient ne transite : seules les coordonnées du variant sont envoyées

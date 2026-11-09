@@ -4,21 +4,22 @@ Deux niveaux : un test hors réseau du générateur de commentaire, et des passa
 sur variants réels couvrant chaque branche de `GetComment`.
 
 ```bash
-node tools/test-comment.mjs                      # 46 vérifications, sans réseau
+node tools/test-comment.mjs                      # 53 vérifications, sans réseau
 node tools/validate.mjs "chr17-7675088-C-T:5"    # chaîne complète sur un variant
 ```
 
 ## 1. Test du commentaire, hors réseau
 
-`tools/test-comment.mjs` fabrique un contexte et vérifie **46 assertions** sur les
+`tools/test-comment.mjs` fabrique un contexte et vérifie **53 assertions** sur les
 dix sections du commentaire, en français et en anglais :
 
 - type de variation et localisation (faux-sens, intronique, inframe avec et sans
   longueur) ;
 - fréquence : absente (`n.a.` et `AC = 0`), rare (`AC ≤ 5`), présente, et bascule
   v4.1 / v2.1.1 dans la phrase ;
-- prédictions : pathogène, bénin, discordant, quirk `UBound` conservé, absence de
-  liste vide, phrase omise sans prédiction ;
+- prédictions : pathogène, bénin, discordant, règle de concordance REVEL/MetaLR,
+  garde-fou des deux outils minimum, absence de liste vide, phrase omise sans
+  prédiction ;
 - perte de fonction ;
 - **conservation** : présente si faux-sens + GERP conservé + phyloP > 4 ; absente dans
   les trois cas contraires ; et vérification explicite que la chaîne
@@ -28,7 +29,7 @@ dix sections du commentaire, en français et en anglais :
 - conclusion des classes 3, 4 et 5, le texte HAS étant comparé **mot pour mot** ;
 - structure : ligne 1 = nomenclature, ligne 2 vide, aucun espace en fin de ligne.
 
-État : **46 / 46**.
+État : **53 / 53**.
 
 ## 2. Passages sur variants réels
 
@@ -41,7 +42,7 @@ réellement renvoyés par les services.
 | `NM_000546.6:c.524G>A` | **même variant en HGVS, gène du brin −** | sortie **identique** au pseudo-VCF — complémentation des allèles correcte |
 | `NM_000492.4:c.1521_1523del` (CFTR p.Phe508del) | inframe, **alignement à gauche** | `7-117559590-ATCT-A`, gnomAD v4.1 **AF 1,19 %**, 17 RCV |
 | `NM_000518.5:c.118C>T` (HBB p.Gln40Ter) | non-sens → perte de fonction | InterVar classe 5 (PVS1) ; CADD 40 ; 11 RCV ; domaine Globin |
-| `NM_007294.4:c.5467+1G>A` (BRCA1) | site donneur → perte de fonction | SpliceAI **0,93** délétère ; CADD 32 ; intron 22/22 ; gnomAD AC 2 → « rare » |
+| `NM_007294.4:c.5467+1G>A` (BRCA1) | site donneur → perte de fonction, **verdict corrigé** | SpliceAI **0,93** délétère ; CADD 32 ; intron 22/22 ; gnomAD AC 2 → « rare » ; verdict « en faveur du caractère pathogène » (était « discordants ») |
 | `NM_005957.5:c.665C>T` (MTHFR p.Ala222Val) | faux-sens fréquent, discordant | gnomAD **AF 31,8 %** ; InterVar classe 1 (BA1) ; délétère SIFT/PolyPhen-2/CADD/REVEL/AlphaMissense vs toléré MetaLR |
 | `NM_000059.4:c.9976A>T` (BRCA2 p.Lys3326Ter) | non-sens fréquent et bénin | gnomAD AF 0,79 % ; ClinVar bénin/probablement bénin ; InterVar classe 2 |
 | `NM_000492.4:c.3717+12191C>T` (CFTR) | intronique profond | intron 22/26 ; 7 RCV pathogènes ; gnomAD AC 18 |
@@ -100,3 +101,32 @@ renvoyé des `500` sur toutes ses requêtes pendant une quinzaine de minutes
 avant cette panne. L'application réessaie avec un palier croissant et affiche un
 message dédié ; rien ne fonctionne sans VEP, qui est la seule source CORS pour la
 normalisation RefSeq et la numérotation des exons.
+
+## 4. Verdict des prédictions après correction
+
+Vérifié par `tools/test-comment.mjs` et sur les variants réels :
+
+| Cas | Avant | Après |
+|---|---|---|
+| BRCA1 `c.5467+1G>A` — CADD et SpliceAI délétères, REVEL/MetaLR `n.a.` | discordants | **en faveur du caractère pathogène** |
+| TP53 `c.524G>A` — six outils délétères | en faveur du caractère pathogène | inchangé |
+| MTHFR `c.665C>T` — REVEL délétère, MetaLR toléré | discordants | inchangé |
+| CFTR `p.Phe508del` — SpliceAI seul, toléré | discordants | **discordants** (le garde-fou évite « en faveur du caractère bénin ») |
+| Non-sens avec CADD délétère seul | discordants | discordants (un seul outil) |
+
+## 5. Panne Ensembl : repli vérifié
+
+En coupant `rest.ensembl.org` (18 requêtes refusées), la normalisation bascule sur
+VariantValidator et donne une sortie **identique** à celle de VEP :
+
+| Variant | Transcrit | MANE | exon/intron | pseudo-VCF |
+|---|---|---|---|---|
+| TP53 `c.524G>A` | NM_000546.6 | oui | exon 5/11 | 17-7675088-C-T |
+| CFTR `p.Phe508del` | NM_000492.4 | oui | exon 11/27 | 7-117559590-ATCT-A |
+| BRCA1 `c.5467+1G>A` | NM_007294.4 | oui | intron 22/22 | 17-43047642-C-T |
+
+Chaîne complète sous panne simulée sur `p.Phe508del` : gnomAD AC 19 237 (AF 1,19 %),
+17 soumissions ClinVar, HGNC 1884, GeneID 1080, UniProt P13569, 2 phénotypes,
+**26 liens actifs, aucune source en échec**, commentaire complet.
+
+Détail des mesures et des alternatives écartées : [ensembl.md](ensembl.md).

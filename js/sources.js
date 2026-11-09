@@ -13,44 +13,56 @@ export function vepHgvs(hgvs) {
 }
 
 /**
- * Conversion VCF → région Ensembl (format « default » de VEP).
- * Indispensable : l'endpoint POST /vep/human/region ne répond pas au préflight CORS
- * (OPTIONS sans en-tête Access-Control-Allow-Origin), alors que le GET passe.
- * Vérifié contre la normalisation de VEP elle-même pour substitution, délétion,
- * insertion et delins.
+ * VEP à partir de coordonnées VCF — via un **HGVS génomique** sur /vep/human/hgvs.
+ *
+ * L'endpoint /vep/human/region est mesuré à ~57 % d'échecs (500 et timeouts) alors
+ * que /vep/human/hgvs répond 14/14 dans le même intervalle, y compris avec un HGVS
+ * génomique, qui porte exactement la même information. Le POST sur /region est de
+ * toute façon inutilisable depuis un navigateur (pas de préflight CORS).
+ * Avantage supplémentaire : pour une entrée génomique VEP renvoie `strand: 1` et des
+ * allèles déjà dans l'orientation du génome, donc aucune complémentation à faire.
  */
-export function vcfToEnsemblRegion(chr, pos, ref, alt) {
-  const p = Number(pos);
-  if (ref.length === alt.length) {
-    return { region: `${chr}:${p}-${p + ref.length - 1}`, allele: alt };
-  }
-  if (alt.length < ref.length && ref.startsWith(alt)) { // délétion
-    return { region: `${chr}:${p + alt.length}-${p + ref.length - 1}`, allele: '-' };
-  }
-  if (ref.length < alt.length && alt.startsWith(ref)) { // insertion : start = end + 1
-    const start = p + ref.length;
-    return { region: `${chr}:${start}-${start - 1}`, allele: alt.slice(ref.length) };
-  }
-  return { region: `${chr}:${p}-${p + ref.length - 1}`, allele: alt }; // delins
-}
-
-/** VEP à partir de coordonnées VCF, en GET (le POST est bloqué par CORS). */
 export function vepVcf(chr, pos, ref, alt) {
-  const { region, allele } = vcfToEnsemblRegion(chr, pos, ref, alt);
-  // Les « : » ne doivent pas être encodés : /region/17%3A7675088-7675088 renvoie une
-  // page d'erreur 500, sans en-tête CORS. region et allele sont déjà validés
-  // (chromosome, position numérique, allèles ACGTN ou « - »).
-  const url = `https://rest.ensembl.org/vep/human/region/${region}/${allele}`
-    + `?content-type=application/json&${VEP_OPTS}`;
-  return fetchJSON(url, { retries: 5, timeout: 40000 });
+  return vepHgvs(genomicHgvsFromVcf(chr, pos, ref, alt));
 }
 
-/** Séquence de référence hg38 sur un intervalle (bornes incluses). */
+/** HGVS génomique (chr sans préfixe) attendu par VEP : « 17:g.7675088C>T ». */
+export function genomicHgvsFromVcf(chr, pos, ref, alt) {
+  const p = Number(pos);
+  if (ref.length === 1 && alt.length === 1) return `${chr}:g.${p}${ref}>${alt}`;
+  if (alt.length < ref.length && ref.startsWith(alt)) {
+    const start = p + alt.length;
+    const end = p + ref.length - 1;
+    return start === end ? `${chr}:g.${start}del` : `${chr}:g.${start}_${end}del`;
+  }
+  if (ref.length < alt.length && alt.startsWith(ref)) {
+    const start = p + ref.length - 1;
+    return `${chr}:g.${start}_${start + 1}ins${alt.slice(ref.length)}`;
+  }
+  const start = p;
+  const end = p + ref.length - 1;
+  return start === end ? `${chr}:g.${start}delins${alt}` : `${chr}:g.${start}_${end}delins${alt}`;
+}
+
+/**
+ * Séquence de référence hg38 sur un intervalle (bornes incluses).
+ * Ensembl d'abord, puis l'API REST d'UCSC — elle répond aussi avec
+ * `Access-Control-Allow-Origin: *` et sert de repli quand Ensembl est en panne.
+ */
 export async function refSeq(chr, start, end) {
-  const url = `https://rest.ensembl.org/sequence/region/human/${chr}:${start}..${end}`
-    + '?content-type=application/json&coord_system_version=GRCh38';
-  const r = await fetchJSON(url, { retries: 3 });
-  return r && r.seq ? r.seq.toUpperCase() : null;
+  try {
+    const url = `https://rest.ensembl.org/sequence/region/human/${chr}:${start}..${end}`
+      + '?content-type=application/json&coord_system_version=GRCh38';
+    const r = await fetchJSON(url, { retries: 2 });
+    if (r && r.seq) return r.seq.toUpperCase();
+  } catch (e) {
+    // on tente UCSC
+  }
+  // UCSC : start exclusif (demi-ouvert), d'où le « start - 1 ».
+  const u = `https://api.genome.ucsc.edu/getData/sequence?genome=hg38;chrom=chr${chr}`
+    + `;start=${start - 1};end=${end}`;
+  const r2 = await fetchJSON(u, { retries: 2 });
+  return r2 && r2.dna ? r2.dna.toUpperCase() : null;
 }
 
 /** Base de référence à une position donnée. */
@@ -185,3 +197,40 @@ export async function mobiDetailsId(hgvs, apiKey) {
   }
   return r && r.mobidetails_id ? String(r.mobidetails_id) : null;
 }
+
+/* ------------------------------------------------------------------ *
+ * Repli de normalisation : VariantValidator
+ *
+ * Ensembl VEP est le seul service CORS qui donne à la fois conséquence et
+ * numérotation des exons ; quand il tombe, l'application entière tombe.
+ * VariantValidator (ACAO *) fournit gène, transcrit, HGVS c./p./g., coordonnées
+ * VCF déjà normalisées, indicateur MANE, numéro d'exon, HGNC et GeneID — tout
+ * sauf le terme de conséquence, qui est déduit prudemment (voir variant.js).
+ * ------------------------------------------------------------------ */
+
+const VV = 'https://rest.variantvalidator.org/VariantValidator';
+
+/** Validation/normalisation d'un variant. `desc` est un HGVS c. ou g. (accession NC_). */
+export function variantValidator(desc, selectTranscripts = 'mane') {
+  const url = `${VV}/variantvalidator/GRCh38/${encodeURIComponent(desc)}/${selectTranscripts}`
+    + '?content_type=application/json';
+  return fetchJSON(url, { retries: 2, timeout: 40000 });
+}
+
+/** Structure exonique d'un transcrit — pour le total d'exons (« 5/11 »). */
+export function variantValidatorTranscript(transcript) {
+  const url = `${VV}/tools/gene2transcripts/${encodeURIComponent(transcript)}`
+    + '?content_type=application/json';
+  return fetchJSON(url, { retries: 2, timeout: 40000 });
+}
+
+/** Accessions RefSeq des chromosomes hg38, pour interroger VariantValidator en génomique. */
+export const NC_ACCESSION = {
+  1: 'NC_000001.11', 2: 'NC_000002.12', 3: 'NC_000003.12', 4: 'NC_000004.12',
+  5: 'NC_000005.10', 6: 'NC_000006.12', 7: 'NC_000007.14', 8: 'NC_000008.11',
+  9: 'NC_000009.12', 10: 'NC_000010.11', 11: 'NC_000011.10', 12: 'NC_000012.12',
+  13: 'NC_000013.11', 14: 'NC_000014.9', 15: 'NC_000015.10', 16: 'NC_000016.10',
+  17: 'NC_000017.11', 18: 'NC_000018.10', 19: 'NC_000019.10', 20: 'NC_000020.11',
+  21: 'NC_000021.9', 22: 'NC_000022.11', X: 'NC_000023.11', Y: 'NC_000024.10',
+  M: 'NC_012920.1',
+};
