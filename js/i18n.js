@@ -84,6 +84,12 @@ export const UI = {
     missense_only: 'faux-sens uniquement',
     openAll: 'Ouvrir les liens principaux',
     discordantNote: 'valeurs discordantes selon le transcrit : {v}',
+    pending: '…',
+    pendingTitle: 'en attente de la source',
+    phenotypesPending: 'Interrogation de Monarch…',
+    commentPending: 'Le commentaire est rédigé quand toutes les sources ont répondu — '
+      + 'une version partielle annoncerait des absences non vérifiées.\n\nEn attente de : {src}',
+    waitingFor: 'en attente : {src}',
   },
   en: {
     tagline: 'Variant annotation and report comment — web version of the SNV ToolBox',
@@ -168,6 +174,12 @@ export const UI = {
     missense_only: 'missense only',
     openAll: 'Open the main links',
     discordantNote: 'values differ between transcripts: {v}',
+    pending: '…',
+    pendingTitle: 'waiting for the source',
+    phenotypesPending: 'Querying Monarch…',
+    commentPending: 'The comment is written once every source has answered — '
+      + 'a partial version would state absences that have not been checked.\n\nWaiting for: {src}',
+    waitingFor: 'waiting: {src}',
   },
 };
 

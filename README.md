@@ -80,6 +80,14 @@ plafonne chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ense
 | VEP répond (cas normal, ~39 ms) | **380–620 ms** |
 | Ensembl **en panne**, repli VariantValidator | **801 ms** de médiane, 16 analyses sur 24 sous la seconde |
 
+L'affichage est **progressif** : l'identité du variant (gène, transcrit, MANE,
+conséquence, HGVS, exon) apparaît dès la normalisation, puis chaque bloc se remplit à
+mesure que les sources répondent. Une valeur encore en vol s'affiche « … » et non
+« n.a. » — en clinique, « n.a. » affirme que la base a répondu sans connaître le variant.
+Le **commentaire n'est pas rédigé tant qu'une source manque**, et les boutons Copier et
+Régénérer restent désactivés : un commentaire partiel annoncerait des absences non
+vérifiées.
+
 Profil détaillé, latence mesurée de chaque service et les huit corrections qui ont fait
 passer l'analyse de 7,8–8,9 s à moins d'une seconde : [docs/latence.md](docs/latence.md).
 

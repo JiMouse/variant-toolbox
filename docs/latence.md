@@ -226,7 +226,64 @@ faveur des 200 ms.
 de main TLS à froid : c'est le service le plus lent qui reste indispensable (dbNSFP,
 CADD, ClinVar, gnomAD v2.1.1). Aucune source CORS équivalente n'a été trouvée.
 
-**Affichage progressif.** Le rendu attend aujourd'hui la dernière source. L'identité du
-variant est connue à ~40 ms et les chiffres arrivent par vagues : afficher chaque bloc
-dès qu'il est prêt ferait percevoir l'analyse comme quasi instantanée, sans rien gagner
-sur le temps total. Demande un remaniement de `render()` dans `js/app.js`.
+*(L'affichage progressif, qui restait à faire, est décrit au § 7.)*
+
+## 7. Affichage progressif
+
+Le temps total ne bouge plus beaucoup ; le temps **perçu**, si. L'identité du variant est
+connue dès la normalisation — avant tout appel aux bases — et les chiffres arrivent
+ensuite par vagues. Chaque bloc est donc rendu dès qu'il est prêt.
+
+### Mécanique
+
+`settleAll(tasks, onSettled)` rappelle l'appelant à **chaque** source qui aboutit ou
+échoue, avec l'état partiel et la liste de ce qui reste en vol. `annotate()` expose cela
+par `onPartial`, en réassemblant le contexte à chaque fois : le même `assemble()` sert au
+rendu intermédiaire et au rendu final, donc aucune logique n'est dupliquée. Le premier
+`onPartial` est émis **avant** le premier appel réseau.
+
+```
+[  40 ms] identité affichée      gène, transcrit, MANE, conséquence, HGVS c./p./g., exon
+[ 438 ms] MyVariant              CADD, REVEL, MetaLR, AlphaMissense, SIFT, PolyPhen, ClinVar, conservation
+[ 509 ms] InterVar               classe ACMG + critères
+[ 597 ms] SpliceAI               score d'épissage
+[ 671 ms] VariantValidator       « exon 5 » → « exon 5/11 »
+[1037 ms] Monarch                phénotypes, MIM, transmission → commentaire rédigé
+```
+
+### « n.a. » n'est pas « pas encore arrivé »
+
+C'est le point délicat, et il est clinique : **`n.a.` affirme que la base a répondu et
+ne connaît pas ce variant.** L'afficher pendant que la requête est en vol serait un
+contresens — un score de prédiction absent n'a pas le même poids qu'un score pas encore
+reçu. Chaque champ est donc rattaché à la source qui le fournit (`isPending()`), et tant
+qu'elle n'a pas répondu la valeur s'affiche « … » avec une pulsation discrète
+(`@keyframes breathe`, neutralisée sous `prefers-reduced-motion`). Cela vaut aussi pour
+les liens : « données manquantes » n'apparaît qu'une fois la source revenue.
+
+### Le commentaire, lui, n'est pas progressif
+
+Volontairement. Une version partielle écrirait « absente des bases de données de
+populations contrôle » simplement parce que gnomAD n'a pas encore répondu. Tant qu'une
+source manque, la zone de texte affiche ce qui est attendu et **les boutons Copier et
+Régénérer restent désactivés** : il n'est pas possible de copier un commentaire
+incomplet. Le compteur d'avancement nomme les sources encore attendues
+(« Interrogation des bases… (1 s) — en attente : InterVar, Monarch »).
+
+Si le plafond de 60 s est atteint alors que des sources ont répondu, l'affichage est
+**conservé** au lieu d'être effacé : l'identité et les chiffres obtenus restent lisibles,
+et le commentaire reste non rédigé.
+
+### Vérifié dans un vrai navigateur
+
+Chrome sans interface, piloté par CDP sur la page servie en local, avec un
+`MutationObserver` sur le bloc de résultats :
+
+- 10 mutations, 6 états distincts observés pour une analyse de TP53 `c.524G>A` ;
+- identité complète au premier rendu, 30 cellules en attente, Copier désactivé ;
+- les sept lignes de prédiction présentes à la fin (SIFT, PolyPhen-2, CADD, REVEL,
+  MetaLR, AlphaMissense, SpliceAI) ;
+- Copier **re-désactivé** au lancement d'une seconde analyse (pas de fuite d'état),
+  vérifié en échantillonnant le bouton toutes les 60 ms ;
+- bascule FR/EN en cours d'affichage sans incident ;
+- **aucune erreur console, aucune exception JS** sur l'ensemble des scénarios.

@@ -198,6 +198,21 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .note { color: var(--muted); font-size: 11px; }
 
+/* Affichage progressif : une valeur encore en vol pulse doucement, pour qu'elle ne se
+   confonde pas avec un « n.a. » — qui, lui, affirme que la base a répondu sans rien. */
+.pending { animation: breathe 1.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+/* Le commentaire n'est pas rédigé tant qu'une source manque (voir renderComment). */
+textarea.awaiting {
+  color: var(--muted);
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending { animation: none; opacity: 0.55; }
+}
+
 .phenos { margin: 0; padding-left: 18px; }
 .phenos li { margin-bottom: 3px; }
 

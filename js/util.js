@@ -82,19 +82,36 @@ export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Exécute les tâches nommées en parallèle ; une source en panne ne fait pas tomber les autres. */
-export async function settleAll(tasks) {
+/**
+ * Exécute les tâches nommées en parallèle ; une source en panne ne fait pas tomber les autres.
+ *
+ * `onSettled(out, errors, pending)` est appelé à **chaque** source qui aboutit ou
+ * échoue, avec l'état partiel : c'est ce qui permet l'affichage progressif. `pending`
+ * dit ce qui est encore en vol, pour que l'interface distingue « pas encore arrivé »
+ * d'un « n.a. » qui, lui, affirme une absence de donnée.
+ */
+export async function settleAll(tasks, onSettled = null) {
   const names = Object.keys(tasks);
-  const results = await Promise.allSettled(names.map((n) => tasks[n]()));
   const out = {};
   const errors = {};
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') out[names[i]] = r.value;
-    else {
-      out[names[i]] = null;
-      errors[names[i]] = String(r.reason && r.reason.message ? r.reason.message : r.reason);
+  const pending = new Set(names);
+  // Clés créées d'emblée : l'ordre de `out` reste celui de la déclaration, pas celui
+  // — variable — des réponses.
+  names.forEach((n) => { out[n] = null; });
+
+  await Promise.all(names.map(async (name) => {
+    try {
+      out[name] = await tasks[name]();
+    } catch (e) {
+      out[name] = null;
+      errors[name] = String(e && e.message ? e.message : e);
     }
-  });
+    pending.delete(name);
+    if (onSettled) {
+      try { onSettled(out, errors, pending); } catch (e) { /* le rendu partiel ne doit rien casser */ }
+    }
+  }));
+
   return { out, errors };
 }
 

@@ -353,38 +353,14 @@ async function geneInfo(variant) {
 }
 
 /**
- * Interroge toutes les sources en parallèle et assemble le contexte complet du variant.
- * Une source en panne laisse « n.a. » dans son champ et une entrée dans `errors`.
+ * Assemble le contexte depuis les réponses **obtenues**, `out` pouvant être incomplet.
+ *
+ * C'est ce qui permet l'affichage progressif : le même assemblage sert au rendu
+ * intermédiaire et au rendu final. `pending` liste les sources encore en vol —
+ * l'interface s'en sert pour afficher une attente là où un « n.a. », qui affirme
+ * l'absence de donnée, serait mensonger.
  */
-export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhenotypes = 12 } = {}) {
-  const id = variant.gnomadId;
-
-  // Le gène est connu dès la normalisation : la chaîne des phénotypes
-  // (genenames → associations Monarch → transmission) est donc lancée **avec** les
-  // sources indexées sur les coordonnées, et non après elles. Elle attendait jusque-là
-  // la fin de settleAll — donc la plus lente des sources — et ajoutait ses ~1,2 s
-  // en fin d'analyse ; elle tient maintenant sous le temps de MyVariant.
-  const genePromise = geneInfo(variant);
-  const phenoPromise = genePromise.then((g) => buildPhenotypes({
-    // VariantValidator fournit HGNC : utile en repli si genenames et mygene tombent.
-    hgncId: g.hgncId || variant.hgncId || null,
-    geneMim: g.mim,
-    omimKey,
-    maxPhenotypes,
-  }));
-
-  const { out, errors } = await settleAll({
-    mv: () => myVariant(variant.myVariantId),
-    g4: () => (id ? gnomad4(id) : Promise.resolve(null)),
-    splice: () => (id ? spliceai(id) : Promise.resolve(null)),
-    iv: () => (variant.ref ? intervar(variant.chr, variant.pos, variant.ref, variant.alt) : Promise.resolve(null)),
-    gene: () => genePromise,
-    phenotypes: () => phenoPromise,
-    // Total d'exons du repli VariantValidator — la réponse de VEP le porte déjà.
-    exons: () => (variant.exonTotalFor ? exonTotal(variant.exonTotalFor) : Promise.resolve(null)),
-    mobi: () => (mobiKey && variant.hgvsc ? mobiDetailsId(variant.hgvsc, mobiKey) : Promise.resolve(null)),
-  });
-
+function assemble(variant, out, errors, pending) {
   const mv = out.mv && !out.mv.__notFound ? out.mv : null;
   const g = out.gene || {};
   const hgncId = g.hgncId || variant.hgncId || null;
@@ -401,6 +377,8 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
     variant: withExons,
     source: variant.source || 'VEP',
     degraded: variant.degraded || null,
+    pending: [...pending],
+    complete: pending.size === 0,
     notFoundInMyVariant: Boolean(out.mv && out.mv.__notFound),
     predictions: buildPredictions(mv, out.splice),
     conservation: buildConservation(mv),
@@ -421,4 +399,53 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
       || first(get(mv, 'dbsnp.rsid')) || null,
     errors,
   };
+}
+
+/**
+ * Interroge toutes les sources en parallèle et assemble le contexte complet du variant.
+ * Une source en panne laisse « n.a. » dans son champ et une entrée dans `errors`.
+ *
+ * `onPartial` reçoit un contexte **à chaque** source qui arrive, le premier étant émis
+ * avant tout appel : l'identité du variant est déjà connue à ce moment-là, et
+ * l'interface peut l'afficher sans attendre les bases.
+ */
+export async function annotate(variant, {
+  omimKey = null, mobiKey = null, maxPhenotypes = 12, onPartial = null,
+} = {}) {
+  const id = variant.gnomadId;
+
+  // Le gène est connu dès la normalisation : la chaîne des phénotypes
+  // (genenames → associations Monarch → transmission) est donc lancée **avec** les
+  // sources indexées sur les coordonnées, et non après elles. Elle attendait jusque-là
+  // la fin de settleAll — donc la plus lente des sources — et ajoutait ses ~1,2 s
+  // en fin d'analyse ; elle tient maintenant sous le temps de MyVariant.
+  const genePromise = geneInfo(variant);
+  const phenoPromise = genePromise.then((g) => buildPhenotypes({
+    // VariantValidator fournit HGNC : utile en repli si genenames et mygene tombent.
+    hgncId: g.hgncId || variant.hgncId || null,
+    geneMim: g.mim,
+    omimKey,
+    maxPhenotypes,
+  }));
+
+  const tasks = {
+    mv: () => myVariant(variant.myVariantId),
+    g4: () => (id ? gnomad4(id) : Promise.resolve(null)),
+    splice: () => (id ? spliceai(id) : Promise.resolve(null)),
+    iv: () => (variant.ref ? intervar(variant.chr, variant.pos, variant.ref, variant.alt) : Promise.resolve(null)),
+    gene: () => genePromise,
+    phenotypes: () => phenoPromise,
+    // Total d'exons du repli VariantValidator — la réponse de VEP le porte déjà.
+    exons: () => (variant.exonTotalFor ? exonTotal(variant.exonTotalFor) : Promise.resolve(null)),
+    mobi: () => (mobiKey && variant.hgvsc ? mobiDetailsId(variant.hgvsc, mobiKey) : Promise.resolve(null)),
+  };
+
+  // Premier rendu : rien n'est encore parti, mais le variant est normalisé.
+  if (onPartial) onPartial(assemble(variant, {}, {}, new Set(Object.keys(tasks))));
+
+  const { out, errors } = await settleAll(tasks, onPartial
+    ? (partialOut, partialErrors, pending) => onPartial(assemble(variant, partialOut, partialErrors, pending))
+    : null);
+
+  return assemble(variant, out, errors, new Set());
 }

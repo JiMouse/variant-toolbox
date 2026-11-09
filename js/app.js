@@ -90,6 +90,38 @@ function badge(text, kind) {
   return s;
 }
 
+/* ---------- attente par source ----------
+ *
+ * Une donnée qui n'est pas encore arrivée ne doit **jamais** s'afficher « n.a. » : en
+ * clinique, « n.a. » affirme que la base a répondu et ne connaît pas ce variant.
+ * `pending` (voir annotate) dit ce qui est encore en vol, et chaque champ est rattaché
+ * à la source qui le fournit.
+ */
+
+/** Source MyVariant pour toutes les prédictions sauf SpliceAI, qui a son propre service. */
+const PRED_SOURCE = { SpliceAI: 'splice' };
+
+function isPending(...sources) {
+  const p = ctx && ctx.pending;
+  return Boolean(p && p.length) && sources.some((src) => p.includes(src));
+}
+
+/** Texte d'attente, à la place d'un « n.a. » qui serait faux. */
+function waitText() {
+  return t(lang, 'pending');
+}
+
+/** Cellule de tableau en attente. */
+function waitCell() {
+  return { text: t(lang, 'pending'), cls: 'na pending' };
+}
+
+/** Valeur, ou attente si la source n'a pas répondu, ou n.a. si elle a répondu sans rien. */
+function orWait(value, ...sources) {
+  if (value !== null && value !== undefined && value !== '') return value;
+  return isPending(...sources) ? waitText() : NA;
+}
+
 function renderIdentity() {
   const v = ctx.variant;
   const maneBox = document.createElement('span');
@@ -105,7 +137,12 @@ function renderIdentity() {
     [t(lang, 'transcript'), v.transcript, 'mono'],
     [t(lang, 'mane'), maneBox],
     [t(lang, 'consequence'), (v.consequenceTerms || []).join(', ')],
-    [t(lang, 'location'), v.loc ? `${t(lang, v.loc)} ${v.locNum} (${v.locField})` : null],
+    // « exon 5 (5/11) » ; tant que le total manque (repli VariantValidator), « exon 5 … ».
+    [t(lang, 'location'), v.loc
+      ? `${t(lang, v.loc)} ${v.locNum}`
+        + (v.locField && v.locField !== v.locNum ? ` (${v.locField})`
+          : (isPending('exons') ? ` (${waitText()})` : ''))
+      : null],
     [t(lang, 'hgvsc'), v.hgvsc, 'mono'],
     [t(lang, 'hgvsp'), v.hgvsp, 'mono'],
     [t(lang, 'hgvsg'), `hg38 ${v.genomicHgvs}`, 'mono'],
@@ -118,9 +155,12 @@ function renderIdentity() {
 function renderNumbers() {
   const iv = ctx.intervar;
   const cv = ctx.clinvar;
-  const ivText = iv ? `${iv.label}${iv.class ? ` — ${lang === 'fr' ? 'classe' : 'class'} ${iv.class}` : ''}` : NA;
+  const ivText = iv
+    ? `${iv.label}${iv.class ? ` — ${lang === 'fr' ? 'classe' : 'class'} ${iv.class}` : ''}`
+    : (isPending('iv') ? waitText() : NA);
   const ivNode = document.createElement('span');
   ivNode.textContent = ivText;
+  if (!iv && isPending('iv')) ivNode.className = 'na pending';
   if (iv && iv.criteria.length) {
     const n = document.createElement('span');
     n.className = 'note';
@@ -136,24 +176,31 @@ function renderNumbers() {
     n.textContent = `  ${cv.accessions.join(', ')}`;
     cvNode.append(n);
   } else {
-    cvNode.textContent = NA;
+    cvNode.textContent = isPending('mv') ? waitText() : NA;
+    cvNode.className = isPending('mv') ? 'na pending' : 'na';
   }
 
   kv($('numbers'), [
     [t(lang, 'intervar'), ivNode],
     [t(lang, 'clinvar'), cvNode],
-    [t(lang, 'domain'), ctx.domain || NA],
+    [t(lang, 'domain'), orWait(ctx.domain, 'mv'),
+      !ctx.domain && isPending('mv') ? 'na pending' : null],
   ]);
 
   const rows = [];
   for (const version of ['v4.1', 'v2.1.1']) {
     const g = ctx.gnomad[version];
+    // v4.1 vient de l'API gnomAD, v2.1.1 de MyVariant : deux attentes distinctes.
+    const src = version === 'v4.1' ? 'g4' : 'mv';
+    const cell = (value) => (value === null || value === undefined
+      ? (isPending(src) ? waitCell() : NA)
+      : value);
     rows.push([
       version,
-      g ? g.ac : NA,
-      g && g.het !== null ? g.het : NA,
-      g && g.hom !== null ? g.hom : NA,
-      g && isNum(g.af) ? `${decimal(round(Number(g.af) * 100, 4), lang)} %` : NA,
+      cell(g ? g.ac : null),
+      cell(g ? g.het : null),
+      cell(g ? g.hom : null),
+      cell(g && isNum(g.af) ? `${decimal(round(Number(g.af) * 100, 4), lang)} %` : null),
     ]);
   }
   table($('gnomadTable'),
@@ -162,27 +209,33 @@ function renderNumbers() {
 
 function renderPredictions() {
   const rows = ctx.predictions.map((p) => {
+    const waiting = isPending(PRED_SOURCE[p.name] || 'mv');
     const scoreNode = document.createElement('span');
-    scoreNode.textContent = decimal(p.score, lang);
-    if (p.discordant) {
+    scoreNode.textContent = waiting ? waitText() : decimal(p.score, lang);
+    if (waiting) scoreNode.className = 'na pending';
+    if (!waiting && p.discordant) {
       const n = document.createElement('span');
       n.className = 'note';
       n.textContent = `  ${t(lang, 'discordantNote', { v: p.discordant.join('/') })}`;
       scoreNode.append(n);
     }
-    return [p.name, verdictCell(p.verdict), scoreNode];
+    return [p.name, waiting ? waitCell() : verdictCell(p.verdict), scoreNode];
   });
   table($('predTable'), [t(lang, 'tool'), t(lang, 'verdict'), t(lang, 'score')], rows);
 
   const c = ctx.conservation;
+  const consWaiting = isPending('mv'); // les trois scores viennent de dbNSFP
+  const consScore = (v) => (consWaiting ? waitCell() : decimal(v, lang));
   table($('consTable'), [t(lang, 'tool'), t(lang, 'verdict'), t(lang, 'score')], [
     [t(lang, 'gerp'),
-      c.gerp.conserved === null
-        ? { text: t(lang, 'na'), cls: 'na' }
-        : { text: t(lang, c.gerp.conserved ? 'conserved' : 'notConserved'), cls: c.gerp.conserved ? 'tol' : 'del' },
-      decimal(c.gerp.score, lang)],
-    [t(lang, 'phylop'), { text: `(${c.phylop.range})`, cls: 'na' }, decimal(c.phylop.score, lang)],
-    [t(lang, 'phastcons'), { text: `(${c.phastcons.range})`, cls: 'na' }, decimal(c.phastcons.score, lang)],
+      consWaiting
+        ? waitCell()
+        : (c.gerp.conserved === null
+          ? { text: t(lang, 'na'), cls: 'na' }
+          : { text: t(lang, c.gerp.conserved ? 'conserved' : 'notConserved'), cls: c.gerp.conserved ? 'tol' : 'del' }),
+      consScore(c.gerp.score)],
+    [t(lang, 'phylop'), { text: `(${c.phylop.range})`, cls: 'na' }, consScore(c.phylop.score)],
+    [t(lang, 'phastcons'), { text: `(${c.phastcons.range})`, cls: 'na' }, consScore(c.phastcons.score)],
   ]);
 }
 
@@ -191,6 +244,13 @@ function renderPhenotypes() {
   box.textContent = '';
   const list = ctx.phenotypes.phenotypes || [];
   if (!list.length) {
+    if (isPending('phenotypes', 'gene')) {
+      const p = document.createElement('p');
+      p.className = 'help pending';
+      p.textContent = t(lang, 'phenotypesPending');
+      box.append(p);
+      return;
+    }
     box.textContent = NA;
     return;
   }
@@ -229,10 +289,14 @@ function renderLinks() {
         el.rel = 'noopener noreferrer';
       }
       el.textContent = l.label;
-      const note = l.url ? l.note : t(lang, 'noLinkData');
+      // Un lien sans URL parce que sa source n'a pas encore répondu ne doit pas
+      // annoncer « données manquantes » : uniprot, MIM et GeneID viennent de
+      // genenames, le rsid de gnomAD ou MyVariant, l'identifiant de MobiDetails.
+      const waiting = !l.url && isPending('gene', 'mobi', 'mv', 'g4');
+      const note = l.url ? l.note : (waiting ? waitText() : t(lang, 'noLinkData'));
       if (note) {
         const n = document.createElement('span');
-        n.className = 'note';
+        n.className = waiting ? 'note pending' : 'note';
         n.textContent = note;
         el.append(n);
       }
@@ -248,12 +312,36 @@ function currentClass() {
   return el ? Number(el.value) : 3;
 }
 
+/** Nom lisible des sources, pour dire ce qui manque encore. */
+const SOURCE_LABELS = {
+  mv: 'MyVariant', g4: 'gnomAD', splice: 'SpliceAI', iv: 'InterVar',
+  gene: 'genenames', phenotypes: 'Monarch', exons: 'VariantValidator', mobi: 'MobiDetails',
+};
+
+function pendingLabels() {
+  return (ctx.pending || []).map((k) => SOURCE_LABELS[k] || k).join(', ');
+}
+
+/**
+ * Le commentaire n'est **pas** rédigé tant qu'une source manque.
+ *
+ * C'est le seul bloc qui ne s'affiche pas progressivement, et c'est volontaire : une
+ * version partielle écrirait « absente des bases de données de populations contrôle »
+ * simplement parce que gnomAD n'a pas encore répondu. Le bouton Copier reste donc
+ * désactivé jusqu'à ce que tout soit arrivé.
+ */
 function renderComment() {
-  $('comment').value = buildComment(ctx, {
-    lang,
-    variantClass: currentClass(),
-    gnomadVersion: $('gnomadVersion').value,
-  });
+  const waiting = Boolean(ctx.pending && ctx.pending.length);
+  $('comment').value = waiting
+    ? t(lang, 'commentPending', { src: pendingLabels() })
+    : buildComment(ctx, {
+      lang,
+      variantClass: currentClass(),
+      gnomadVersion: $('gnomadVersion').value,
+    });
+  $('comment').classList.toggle('awaiting', waiting);
+  $('copyBtn').disabled = waiting;
+  $('regenBtn').disabled = waiting;
 }
 
 function render() {
@@ -287,29 +375,37 @@ function setBusy(on) {
 let progressTimer = null;
 let progressStage = 'progressNormalising';
 let progressStart = 0;
+let progressDetail = '';
+
+function progressText() {
+  const secs = Math.round((Date.now() - progressStart) / 1000);
+  return t(lang, progressStage, { s: secs }) + (progressDetail ? ` — ${progressDetail}` : '');
+}
 
 function startProgress() {
   progressStart = Date.now();
   progressStage = 'progressNormalising';
-  const tick = () => {
-    const secs = Math.round((Date.now() - progressStart) / 1000);
-    message(t(lang, progressStage, { s: secs }), 'progress');
-  };
+  progressDetail = '';
+  const tick = () => message(progressText(), 'progress');
   tick();
   progressTimer = setInterval(tick, 1000);
 }
 
 function setProgressStage(stage) {
   progressStage = stage;
-  if (progressTimer) {
-    const secs = Math.round((Date.now() - progressStart) / 1000);
-    message(t(lang, progressStage, { s: secs }), 'progress');
-  }
+  if (progressTimer) message(progressText(), 'progress');
+}
+
+/** Détail de l'attente : les sources qui n'ont pas encore répondu. */
+function setProgressDetail(text) {
+  progressDetail = text || '';
+  if (progressTimer) message(progressText(), 'progress');
 }
 
 function stopProgress() {
   if (progressTimer) clearInterval(progressTimer);
   progressTimer = null;
+  progressDetail = '';
 }
 
 /** Garde-fou global : une analyse ne doit jamais rester suspendue indéfiniment. */
@@ -338,9 +434,20 @@ async function run() {
       60000,
     );
     setProgressStage('progressAnnotating');
+
+    // Affichage progressif : le premier `onPartial` est émis avant tout appel aux
+    // bases, donc l'identité du variant — gène, transcrit, HGVS, exon — s'affiche dès
+    // la normalisation (~40 ms avec VEP). Chaque source qui arrive complète le tableau.
     ctx = await withDeadline(annotate(variant, {
       omimKey: store.get('vt.omimKey') || null,
       mobiKey: store.get('vt.mobiKey') || null,
+      onPartial: (partial) => {
+        ctx = partial;
+        render();
+        if (partial.pending && partial.pending.length) {
+          setProgressDetail(t(lang, 'waitingFor', { src: pendingLabels() }));
+        }
+      },
     }), 60000);
     stopProgress();
     render();
@@ -356,6 +463,14 @@ async function run() {
   } catch (e) {
     stopProgress();
     const msg = String(e && e.message ? e.message : e);
+    // Délai global dépassé mais des sources ont répondu : on garde ce qui est affiché
+    // plutôt que de tout effacer — l'utilisateur voit au moins l'identité et les
+    // chiffres arrivés, et le commentaire reste volontairement non rédigé.
+    if (msg === 'DEADLINE' && ctx && ctx.variant) {
+      message(t(lang, 'errTimeout'), 'error');
+      setBusy(false);
+      return;
+    }
     if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
     else if (msg === 'EMPTY_INPUT') message(t(lang, 'errEmpty'), 'error');
     else if (/Failed to fetch|NetworkError|load failed/i.test(msg)) message(t(lang, 'errNetwork'), 'error');
