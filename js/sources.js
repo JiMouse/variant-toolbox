@@ -1,15 +1,22 @@
 // Clients des services interrogeables depuis un navigateur (voir docs/cors.md).
 // Chaque fonction renvoie du JSON brut ; l'interprétation est dans annotate.js.
 
-import { fetchJSON } from './util.js';
+import { fetchJSON, hedge } from './util.js';
 
 const VEP_OPTS = 'refseq=1&hgvs=1&numbers=1&domains=1&mane=1&canonical=1&variant_class=1';
 
-/** VEP à partir d'une nomenclature HGVS c. (transcrit RefSeq). */
-export function vepHgvs(hgvs) {
+/**
+ * VEP à partir d'une nomenclature HGVS c. (transcrit RefSeq).
+ *
+ * `retries: 0` par défaut : VEP répond en ~40 ms quand il va bien, et quand il va mal
+ * il laisse pendre la connexion. Réessayer trois fois avec un palier croissant coûtait
+ * 2,8 s **avant** que `hedge` ne puisse lancer VariantValidator, alors que l'échec
+ * était connu dès 160 ms. Le repli est VariantValidator, pas un réessai d'Ensembl.
+ */
+export function vepHgvs(hgvs, opts = {}) {
   const url = `https://rest.ensembl.org/vep/human/hgvs/${encodeURIComponent(hgvs)}`
     + `?content-type=application/json&${VEP_OPTS}`;
-  return fetchJSON(url, { retries: 2, timeout: 8000 });
+  return fetchJSON(url, { retries: 0, timeout: 8000, ...opts });
 }
 
 /**
@@ -22,8 +29,8 @@ export function vepHgvs(hgvs) {
  * Avantage supplémentaire : pour une entrée génomique VEP renvoie `strand: 1` et des
  * allèles déjà dans l'orientation du génome, donc aucune complémentation à faire.
  */
-export function vepVcf(chr, pos, ref, alt) {
-  return vepHgvs(genomicHgvsFromVcf(chr, pos, ref, alt));
+export function vepVcf(chr, pos, ref, alt, opts = {}) {
+  return vepHgvs(genomicHgvsFromVcf(chr, pos, ref, alt), opts);
 }
 
 /** HGVS génomique (chr sans préfixe) attendu par VEP : « 17:g.7675088C>T ». */
@@ -70,10 +77,50 @@ export async function refBase(chr, pos) {
   return refSeq(chr, pos, pos);
 }
 
-/** MyVariant.info : dbNSFP, CADD, ClinVar, gnomAD v2.1.1 exomes. `id` est un HGVS génomique. */
+/**
+ * Champs MyVariant réellement lus par annotate.js — `fields=all` renvoyait 103 KiB
+ * dont 68 KiB de `snpeff`, jamais utilisé. La liste restreinte rend 10 KiB et divise
+ * la latence médiane par deux (~1 000 ms → ~500 ms).
+ *
+ * ⚠ `dbnsfp.gerp*` : le paramètre `fields` de MyVariant **ne sait pas** viser
+ * `dbnsfp.gerp++.rs` — le `+` est ignoré et la réponse contient alors
+ * `dbnsfp.gerp.91_mammals` (5,48 ici) à la place de `gerp++.rs` (5,41), soit une
+ * **autre** mesure de conservation. Le joker `gerp*` ramène bien les deux.
+ */
+const MYVARIANT_FIELDS = [
+  'dbnsfp.sift',
+  'dbnsfp.polyphen2.hdiv',
+  'dbnsfp.cadd.phred',
+  'dbnsfp.revel.score',
+  'dbnsfp.metalr',
+  'dbnsfp.alphamissense',
+  'dbnsfp.gerp*',
+  'dbnsfp.phylop.100way_vertebrate.score',
+  'dbnsfp.phastcons.100way_vertebrate.score',
+  'dbnsfp.interpro.domain',
+  'cadd.phred',
+  'clinvar.rcv',
+  'gnomad_exome.ac.ac',
+  'gnomad_exome.hom.hom',
+  'gnomad_exome.af.af',
+  'dbsnp.rsid',
+].join(',');
+
+/**
+ * MyVariant.info : dbNSFP, CADD, ClinVar, gnomAD v2.1.1 exomes. `id` est un HGVS génomique.
+ *
+ * Même défaut qu'Ensembl : le service ne refuse pas, il **laisse pendre** la connexion
+ * par intermittence. Une requête suspendue coûtait 8 s de délai puis un réessai qui
+ * aboutissait en 1,7 s — 10,5 s d'analyse pour une donnée normalement rendue en
+ * ~350 ms. La requête est donc doublée si rien n'est revenu au bout de 1,5 s, et la
+ * première réponse gagne : c'est la parade déjà employée pour VEP (voir `hedge`).
+ * Un GET idempotent, donc sans effet de bord à être émis deux fois.
+ */
 export function myVariant(id) {
-  const url = `https://myvariant.info/v1/variant/${encodeURIComponent(id)}?assembly=hg38&fields=all`;
-  return fetchJSON(url, { retries: 2, timeout: 12000 });
+  const url = `https://myvariant.info/v1/variant/${encodeURIComponent(id)}`
+    + `?assembly=hg38&fields=${encodeURIComponent(MYVARIANT_FIELDS)}`;
+  const once = () => fetchJSON(url, { retries: 1, timeout: 8000 });
+  return hedge(once, once, { delay: 1500 });
 }
 
 /** gnomAD v4.1 — exomes + génomes, AC / AN / AF / homozygotes. */
@@ -97,29 +144,37 @@ export function gnomad4(variantId) {
 // L'hôte documenté de SpliceAI ne répond plus (connexion en timeout) : ce sont les
 // services Cloud Run appelés par l'interface officielle qui sont essayés d'abord,
 // l'hôte documenté restant en dernier recours s'il revient un jour.
-// Les services Cloud Run démarrent à froid : il faut leur laisser ~25 s. L'hôte
-// documenté, lui, ne répond plus du tout — timeout court pour ne pas allonger
-// l'attente de 20 s supplémentaires à chaque fois.
-const SPLICEAI_HOSTS = [
-  { host: 'https://spliceai-38-xwkwwwxdwq-uc.a.run.app', timeout: 25000 },
-  { host: 'https://spliceai-38-comprehensive-xwkwwwxdwq-uc.a.run.app', timeout: 25000 },
-  { host: 'https://spliceailookup-api.broadinstitute.org', timeout: 4000 },
+// Les services Cloud Run démarrent à froid : il faut leur laisser ~25 s.
+const SPLICEAI_CLOUD_RUN = [
+  'https://spliceai-38-xwkwwwxdwq-uc.a.run.app',
+  'https://spliceai-38-comprehensive-xwkwwwxdwq-uc.a.run.app',
 ];
+const SPLICEAI_DOCUMENTED = 'https://spliceailookup-api.broadinstitute.org';
 
+/**
+ * SpliceAI — les deux services Cloud Run **en course**, pas l'un après l'autre.
+ *
+ * Essayés en série, chacun avec les 25 s que demande un démarrage à froid, ils
+ * pouvaient à eux seuls retenir une analyse 50 s. Le second part donc au bout de 3 s
+ * si le premier n'a pas répondu (il répond en ~200 ms à chaud), et la première réponse
+ * gagne : un démarrage à froid d'un service n'est plus payé en entier avant d'essayer
+ * l'autre. L'hôte documenté reste en dernier recours, avec un timeout court puisqu'il
+ * ne répond plus du tout.
+ */
 export async function spliceai(variantId, distance = 50) {
-  let lastErr;
-  for (const { host, timeout } of SPLICEAI_HOSTS) {
-    try {
-      const url = `${host}/spliceai/?hg=38&distance=${distance}&variant=${encodeURIComponent(variantId)}`;
-      const r = await fetchJSON(url, { retries: 0, timeout });
-      // Une réponse d'erreur du service (variant non couvert) est une réponse :
-      // inutile d'essayer les autres hôtes.
-      if (r && (r.scores || r.error)) return r;
-    } catch (e) {
-      lastErr = e;
-    }
+  const ask = (host, timeout) => async () => {
+    const url = `${host}/spliceai/?hg=38&distance=${distance}&variant=${encodeURIComponent(variantId)}`;
+    const r = await fetchJSON(url, { retries: 0, timeout });
+    // Une réponse d'erreur du service (variant non couvert) est une réponse.
+    if (r && (r.scores || r.error)) return r;
+    throw new Error('SpliceAI: réponse inexploitable');
+  };
+
+  try {
+    return await hedge(ask(SPLICEAI_CLOUD_RUN[0], 25000), ask(SPLICEAI_CLOUD_RUN[1], 25000), { delay: 3000 });
+  } catch (e) {
+    return ask(SPLICEAI_DOCUMENTED, 4000)();
   }
-  throw lastErr || new Error('SpliceAI indisponible');
 }
 
 /**
@@ -130,7 +185,9 @@ export async function spliceai(variantId, distance = 50) {
 export async function intervar(chr, pos, ref, alt) {
   const url = `https://wintervar.wglab.org/api_new.php?queryType=position&chr=${chr}`
     + `&pos=${pos}&ref=${ref}&alt=${alt}&build=hg38`;
-  const text = await fetchJSON(url, { retries: 1, timeout: 12000, expect: 'text' });
+  // Mesuré à ~99 ms connexion chaude, 1,5 s au pire : 8 s gardent 5× de marge
+  // sans immobiliser l'analyse 12 s quand le service ne répond pas.
+  const text = await fetchJSON(url, { retries: 1, timeout: 8000, expect: 'text' });
   if (!text || !String(text).trim()) return null;
   try {
     return JSON.parse(text);
@@ -139,7 +196,42 @@ export async function intervar(chr, pos, ref, alt) {
   }
 }
 
-/** mygene.info : UniProt (Swiss-Prot) et HGNC, à partir du transcrit RefSeq. */
+/**
+ * genenames.org (HGNC) — HGNC, UniProt, MIM du gène et GeneID NCBI **en un appel**.
+ *
+ * Mesuré à ~40 ms (médiane sur 8), `Access-Control-Allow-Origin: *`, là où la paire
+ * mygene.info (~1 500 ms) + E-utilities (~300 ms, et limité à 3 req/s sans clé —
+ * observé en échec au 5e appel d'affilée) tenait le chemin critique à elle seule.
+ * Valeurs comparées sur TP53, BRCA1, CFTR, MTHFR : identiques champ par champ.
+ *
+ * @param {string} path  « symbol/TP53 » ou « refseq_accession/NM_000546 »
+ */
+export async function genenames(path) {
+  const url = `https://rest.genenames.org/fetch/${path}`;
+  const r = await fetchJSON(url, { retries: 1, timeout: 8000, headers: { Accept: 'application/json' } });
+  const docs = r && r.response && r.response.docs;
+  return docs && docs.length ? docs[0] : null;
+}
+
+/**
+ * Mode de transmission de **plusieurs** maladies en un seul appel.
+ *
+ * Monarch accepte `subject` répété : une requête de ~200 ms remplace les N appels
+ * `/entity/{MONDO}` (~750 ms et 15 KiB chacun) que demandait le mode de transmission.
+ * Elle en trouve aussi davantage : l'objet `inheritance` d'une fiche `/entity` est
+ * souvent vide là où l'association existe (voir README, « Phénotypes »).
+ *
+ * @param {string[]} mondoIds
+ * @returns {Promise<object>} { 'MONDO:…': 'AD' | 'AR' | … }
+ */
+export function monarchInheritance(mondoIds) {
+  const qs = mondoIds.map((id) => `subject=${encodeURIComponent(id)}`).join('&');
+  const url = `https://api.monarchinitiative.org/v3/api/association?${qs}`
+    + '&predicate=biolink%3Ahas_mode_of_inheritance&limit=100';
+  return fetchJSON(url, { retries: 1, timeout: 12000 });
+}
+
+/** mygene.info : UniProt (Swiss-Prot) et HGNC, à partir du transcrit RefSeq. Repli de genenames. */
 export function mygene(refseq) {
   const acc = String(refseq).split('.')[0];
   const url = `https://mygene.info/v3/query?q=refseq:${encodeURIComponent(acc)}&species=human`

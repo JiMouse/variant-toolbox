@@ -92,10 +92,13 @@ l'expiration complète avant de songer au repli.
 
 Corrections :
 
-- **délai VEP ramené à 8 s**, 2 réessais ;
-- **course (hedging)** : VEP est lancé, et si rien n'est revenu au bout de **2,5 s**,
+- **délai VEP ramené à 8 s**, et **sans réessai** : le repli est VariantValidator, pas
+  une nouvelle tentative sur Ensembl. Avec `retries: 2`, un `500` connu dès 160 ms
+  n'était signalé à la course qu'au bout de 2,8 s (voir [latence.md](latence.md) § 3a) ;
+- **course (hedging)** : VEP est lancé, et si rien n'est revenu au bout de **200 ms**,
   VariantValidator est lancé *en parallèle* — la première réponse gagne. Plus besoin
-  d'attendre l'échec de VEP pour basculer ;
+  d'attendre l'échec de VEP pour basculer. 200 ms laissent 5× la médiane de VEP
+  (39 ms), et VEP garde la course s'il répond avant VariantValidator (~1,3 s) ;
 - **plafond global de 60 s** par étape, et un **compteur d'avancement** dans
   l'interface (« Normalisation du variant… (3 s) », « Ensembl tarde à répondre —
   repli sur VariantValidator… ») : la page ne peut plus paraître figée ;
@@ -103,11 +106,16 @@ Corrections :
 
 Résultat mesuré sur le même variant :
 
-| Situation | Avant | Après |
-|---|---|---|
-| Ensembl sain | ~3 s | **2,9 s** |
-| Ensembl lent (cas réel) | **103 s** | **5–6 s** (repli) |
-| Ensembl qui pend indéfiniment | jamais de réponse utile | **3,2 s** (repli) |
+| Situation | Avant | Après (délai 2,5 s) | Après profilage |
+|---|---|---|---|
+| Ensembl sain | ~3 s | 2,9 s | **380–620 ms** |
+| Ensembl lent (cas réel) | **103 s** | 5–6 s (repli) | **~1,4 s** (repli) |
+| Ensembl qui pend indéfiniment | jamais de réponse utile | 3,2 s (repli) | **~1,4 s** (repli) |
+
+La dernière colonne vient du travail de profilage décrit dans
+[latence.md](latence.md) : l'attente morte avant le repli n'était qu'un des huit
+postes, et la normalisation n'était que le premier des trois étages successifs que la
+chaîne enchaînait.
 
 ## 4. Ce qui reste un point de défaillance unique
 

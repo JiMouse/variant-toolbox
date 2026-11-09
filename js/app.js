@@ -372,6 +372,41 @@ async function run() {
 
 /* ---------- événements ---------- */
 
+/**
+ * Ouvre les connexions TLS vers les services au premier contact avec le champ de
+ * saisie — donc pendant que le variant est tapé, et non pendant l'analyse.
+ *
+ * Un `preconnect` posé dans le `<head>` serait inutile : les navigateurs ferment une
+ * connexion préouverte restée inutilisée au bout d'une dizaine de secondes, bien
+ * avant qu'un variant soit saisi. Les origines ne sont retenues que si elles sont
+ * interrogées à **chaque** analyse : ouvrir une connexion vers un repli qui ne sert
+ * presque jamais coûterait plus qu'elle ne rapporte.
+ */
+const WARM_ORIGINS = [
+  'https://rest.ensembl.org',
+  'https://myvariant.info',
+  'https://rest.genenames.org',
+  'https://api.monarchinitiative.org',
+  'https://gnomad.broadinstitute.org',
+  'https://wintervar.wglab.org',
+];
+let warmed = false;
+
+function warmUp() {
+  if (warmed) return;
+  warmed = true;
+  for (const origin of WARM_ORIGINS) {
+    const l = document.createElement('link');
+    l.rel = 'preconnect';
+    l.href = origin;
+    l.crossOrigin = 'anonymous'; // les appels sont des requêtes CORS : même pool de connexions
+    document.head.append(l);
+  }
+}
+
+$('variantInput').addEventListener('focus', warmUp, { once: true });
+$('variantInput').addEventListener('input', warmUp, { once: true });
+
 $('queryForm').addEventListener('submit', (e) => { e.preventDefault(); run(); });
 
 $('langToggle').addEventListener('click', () => {

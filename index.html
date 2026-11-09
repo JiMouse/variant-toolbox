@@ -7,6 +7,20 @@
 <meta name="description" content="Annotation de variants et rédaction du commentaire — version web de la ToolBox SNV.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/app.css">
+
+<!-- Résolution DNS anticipée des services interrogés. La première requête vers un
+     hôte neuf paie DNS + TCP + TLS : mesuré à 882 ms pour wInterVar et 573 ms pour
+     Monarch à froid, contre 99 et 212 ms connexion chaude. La connexion elle-même est
+     ouverte au premier contact avec le champ de saisie (warmUp, js/app.js) : un
+     preconnect posé au chargement expirerait avant que le variant soit saisi. -->
+<link rel="dns-prefetch" href="https://rest.ensembl.org">
+<link rel="dns-prefetch" href="https://myvariant.info">
+<link rel="dns-prefetch" href="https://rest.genenames.org">
+<link rel="dns-prefetch" href="https://api.monarchinitiative.org">
+<link rel="dns-prefetch" href="https://gnomad.broadinstitute.org">
+<link rel="dns-prefetch" href="https://wintervar.wglab.org">
+<link rel="dns-prefetch" href="https://spliceai-38-xwkwwwxdwq-uc.a.run.app">
+<link rel="dns-prefetch" href="https://rest.variantvalidator.org">
 </head>
 <body>
 <header class="topbar">

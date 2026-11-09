@@ -243,6 +243,23 @@ export function genomicHgvs(item) {
 }
 
 /**
+ * Délai avant de lancer VariantValidator en parallèle de VEP.
+ *
+ * VEP en bonne santé répond en ~40 ms (médiane sur 8 mesures, min 34, max 214) ; en
+ * mauvaise santé il met 24 s, 51 s, ou ne répond pas. 2 500 ms étaient donc 2,5 s
+ * d'attente morte à chaque épisode de lenteur, et le `retries: 2` de `vepHgvs`
+ * retardait d'autant la détection d'un échec franc (un HTTP 500 connu dès 160 ms
+ * n'était signalé à `hedge` qu'au bout de 2,8 s).
+ *
+ * 200 ms laissent 5× la médiane de VEP tout en rendant la bascule presque immédiate :
+ * pendant un épisode de lenteur d'Ensembl, c'était le plus gros poste restant du chemin
+ * critique du repli. VariantValidator n'est donc sollicité en vain que lorsque VEP
+ * dépasse 200 ms — et même alors VEP garde la course s'il répond avant lui (~1,3 s à
+ * froid, ~200 ms à chaud).
+ */
+const VEP_HEDGE_DELAY = 200;
+
+/**
  * Normalise une saisie en un objet variant complet.
  * @returns {Promise<object>} chr, pos, ref, alt, pseudoVcf, gene, transcript, isMane, …
  */
@@ -268,7 +285,7 @@ export async function normalize(input, { onProgress = null } = {}) {
   let item;
   try {
     item = await hedge(viaVep, () => normalizeViaVariantValidator(parsed), {
-      delay: 2500,
+      delay: VEP_HEDGE_DELAY,
       onSecondary: () => { if (onProgress) onProgress('fallback'); },
     });
   } catch (e) {
@@ -381,8 +398,16 @@ export function inferConsequence(hgvsc, hgvsp) {
   return null;
 }
 
-/** Nombre total d'exons du transcrit, via gene2transcripts (pour « 5/11 »). */
-async function exonTotal(transcript) {
+/**
+ * Nombre total d'exons du transcrit, via gene2transcripts (pour « 5/11 »).
+ *
+ * Appelé par annotate(), pas par normalize() : la réponse pèse 200 KiB et met de
+ * 200 ms à 1,3 s, pour un seul entier absent de la réponse principale de
+ * VariantValidator. Sur le chemin critique de la normalisation, elle s'ajoutait
+ * telle quelle au total ; dans le bloc parallèle d'annotate() elle passe sous le
+ * temps des autres sources.
+ */
+export async function exonTotal(transcript) {
   try {
     const r = await variantValidatorTranscript(transcript);
     const list = Array.isArray(r) ? r : [r];
@@ -453,10 +478,6 @@ export async function normalizeViaVariantValidator(parsed) {
   // VariantValidator suffixe les positions introniques par « i » : « 22i » = intron 22.
   const isIntron = rawExon ? /i$/i.test(String(rawExon)) : false;
   const exonNum = rawExon ? String(rawExon).replace(/i$/i, '') : null;
-  const exons = transcript ? await exonTotal(transcript) : null;
-  // Un transcrit à n exons compte n−1 introns.
-  const total = exons ? (isIntron ? exons - 1 : exons) : null;
-
   const varType = inferConsequence(hgvsc, hgvsp);
   const loc = exonNum ? (isIntron ? 'intron' : 'exon') : null;
 
@@ -488,7 +509,9 @@ export async function normalizeViaVariantValidator(parsed) {
     variantClass: null,
     loc,
     locNum: exonNum ? String(exonNum) : null,
-    locField: exonNum ? (total ? `${exonNum}/${total}` : String(exonNum)) : null,
+    // Numéro seul ici ; annotate() le complète en « 5/11 » (voir exonTotal).
+    locField: exonNum ? String(exonNum) : null,
+    exonTotalFor: exonNum && transcript ? transcript : null,
     hgvsc,
     hgvsp,
     proteinChange: hgvsp ? hgvsp.split(':').slice(1).join(':') || null : null,

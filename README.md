@@ -56,8 +56,7 @@ retombe silencieusement sur Monarch.
 | SpliceAI | services Cloud Run de SpliceAI-lookup (hg38) |
 | ClinVar (signification agrégée + accessions RCV) | MyVariant.info (`clinvar`) |
 | InterVar + critères ACMG | API wInterVar |
-| UniProt, HGNC | mygene.info |
-| NCBI GeneID (PubTator) | NCBI E-utilities |
+| UniProt, HGNC, MIM du gène, NCBI GeneID | genenames.org (HGNC), repli mygene.info + E-utilities |
 | Phénotypes, MIM, transmission | OMIM (avec clé) ou Monarch |
 
 Le détail des tests CORS — et la liste de ce qui reste en **lien seul** — est dans
@@ -68,11 +67,27 @@ refusent les appels depuis une page web. Le score CADD phred vient donc de MyVar
 **Ensembl** : les deux formes de saisie passent par `GET /vep/human/hgvs`, mesuré à
 14/14 là où `GET /vep/human/region` échoue 8 fois sur 14. Ensembl ne tombe pas
 franchement, il **laisse pendre la connexion** : VEP est donc lancé avec un délai de
-8 s, et si rien n'est revenu au bout de 2,5 s **VariantValidator est lancé en
-parallèle**, la première réponse gagnant la course. La séquence de référence bascule
-de même sur l'**API REST d'UCSC**. Une analyse qui prenait 103 s pendant un épisode
-de lenteur en prend 5 à 6. L'interface affiche un compteur d'avancement et plafonne
-chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ensembl.md).
+8 s et sans réessai, et si rien n'est revenu au bout de 200 ms **VariantValidator est
+lancé en parallèle**, la première réponse gagnant la course. La séquence de référence
+bascule de même sur l'**API REST d'UCSC**. Une analyse qui prenait 103 s pendant un
+épisode de lenteur en prend 1,4. L'interface affiche un compteur d'avancement et
+plafonne chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ensembl.md).
+
+## Temps d'analyse
+
+| Situation | Durée |
+|---|---|
+| VEP répond (cas normal, ~39 ms) | **380–620 ms** |
+| Ensembl **en panne**, repli VariantValidator | **801 ms** de médiane, 16 analyses sur 24 sous la seconde |
+
+Profil détaillé, latence mesurée de chaque service et les huit corrections qui ont fait
+passer l'analyse de 7,8–8,9 s à moins d'une seconde : [docs/latence.md](docs/latence.md).
+
+Trois d'entre elles pèsent le plus : la course VEP/VariantValidator ne perd plus 2,5 s
+en attente morte, la chaîne des phénotypes tourne **en parallèle** des autres sources
+au lieu de les suivre, et `genenames.org` remplace en un appel de 38 ms la paire
+mygene.info + E-utilities qui coûtait 1,4 s. La page ouvre aussi ses connexions TLS
+**pendant la saisie** (`warmUp`) : la seule poignée de main de MyVariant coûte 1,3 s.
 
 ## Seuils
 
@@ -157,6 +172,16 @@ reste « discordants » (MTHFR `c.665C>T`).
   toujours affichées dans le tableau.
 - Sans clé OMIM, la liste des phénotypes vient de Monarch : l'ordre n'est pas celui
   d'OMIM et la transmission peut manquer pour certaines entrées.
+- **Mode de transmission plus souvent renseigné.** La transmission est lue dans un
+  appel Monarch groupé (`predicate=biolink:has_mode_of_inheritance`) et non plus dans
+  l'objet `inheritance` d'une fiche `/entity`, souvent vide. Elle est donc trouvée
+  **plus souvent** : trois phénotypes de contrôle passent de « ? » à « AD »
+  (*hereditary breast carcinoma*, *familial pancreatic carcinoma*,
+  *breast-ovarian cancer … 1*) et le commentaire gagne « de transmission autosomique
+  dominante ». C'est le seul écart de sortie introduit par l'optimisation de latence
+  ([docs/latence.md](docs/latence.md) § 3e) ; il est **conservé volontairement**, la
+  donnée ajoutée étant correcte. Les comptes rendus de ces gènes ne sont donc plus
+  comparables au caractère près avec ceux déjà produits par la macro.
 - Les champs dbNSFP sont des tableaux (une valeur par transcrit). La première valeur
   est retenue, comme dans la macro ; l'interface signale les valeurs discordantes.
 
@@ -171,7 +196,8 @@ node tools/validate.mjs --gnomad v2.1.1 "chr17-7675088-C-T:5"   # comme la macro
 
 `tools/test-comment.mjs` exerce les dix sections du commentaire en FR et EN sans
 appel réseau. Les passages sur variants réels sont dans
-[docs/validation.md](docs/validation.md).
+[docs/validation.md](docs/validation.md), et la comparaison avant/après l'optimisation
+de latence dans [docs/latence.md](docs/latence.md) § 5.
 
 Même chaîne que la page (`js/` est partagé), affichage des chiffres, des liens et du
 commentaire. Clés par variables d'environnement : `OMIM_KEY`, `MOBIDETAILS_KEY`.
@@ -194,6 +220,7 @@ tools/test-comment.mjs  tests du commentaire, sans réseau
 docs/cors.md        tests CORS
 docs/ensembl.md     choix de l'endpoint VEP et solutions de repli
 docs/validation.md  vérifications
+docs/latence.md     profil et optimisation du temps d'analyse
 ```
 
 Aucune donnée patient ne transite : seules les coordonnées du variant sont envoyées

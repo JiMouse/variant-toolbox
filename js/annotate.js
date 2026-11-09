@@ -3,9 +3,10 @@
 // AlphaMissense pred B = toléré, SIFT/PolyPhen/MetaLR : T/B = toléré, D/P/A = délétère.
 
 import {
-  myVariant, gnomad4, spliceai, intervar, mygene, ncbiGeneId,
-  monarchDiseases, monarchDisease, omimGeneMap, mobiDetailsId,
+  myVariant, gnomad4, spliceai, intervar, mygene, ncbiGeneId, genenames,
+  monarchDiseases, monarchDisease, monarchInheritance, omimGeneMap, mobiDetailsId,
 } from './sources.js';
+import { exonTotal } from './variant.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
 
 export const DEL = 'del';
@@ -240,27 +241,60 @@ export async function buildPhenotypes({ hgncId, geneMim, omimKey, maxPhenotypes 
     unique.push(it);
     if (unique.length >= maxPhenotypes) break;
   }
+  if (!unique.length) return { source: 'Monarch', phenotypes: [] };
 
-  // Les fiches maladie sont demandées en parallèle : une par maladie, sinon la
-  // récupération dure plusieurs dizaines de secondes sur un gène très annoté.
-  const details = await Promise.all(unique.map(async (it) => {
-    try {
-      const d = await monarchDisease(it.object);
-      const mapping = ((d && d.mappings) || []).find((m) => String(m.id).startsWith('OMIM:'));
-      const inh = d && d.inheritance;
-      return {
-        mim: mapping ? String(mapping.id).replace('OMIM:', '') : null,
-        inheritance: inh && inh.id ? (INHERITANCE_HPO[inh.id] || null) : null,
-      };
-    } catch (e) {
-      return { mim: null, inheritance: null }; // une maladie sans fiche ne bloque pas les autres
-    }
-  }));
+  // Le numéro MIM est déjà dans l'association : `original_object` vaut « OMIM:114480 »
+  // pour les associations issues d'OMIM. Il manque pour les autres (Orphanet…), et
+  // une fiche /entity n'est alors demandée **que** pour celles-là — 0 appel sur TP53,
+  // CFTR et DMD, 1 sur BRCA1, là où il y en avait un par maladie.
+  const mimFromAssoc = unique.map((it) => (/^OMIM:\d+$/.test(String(it.original_object || ''))
+    ? String(it.original_object).replace('OMIM:', '')
+    : null));
+
+  const [inheritance, entities] = await Promise.all([
+    inheritanceMap(unique.map((it) => it.object)),
+    Promise.all(unique.map((it, i) => (mimFromAssoc[i] ? null : entityDetail(it.object)))),
+  ]);
 
   const out = unique.map((it, i) => ({
-    name: it.object_label, mim: details[i].mim, inheritance: details[i].inheritance, mondo: it.object,
+    name: it.object_label,
+    mim: mimFromAssoc[i] || (entities[i] && entities[i].mim) || null,
+    inheritance: inheritance[it.object] || (entities[i] && entities[i].inheritance) || null,
+    mondo: it.object,
   }));
   return { source: 'Monarch', phenotypes: out };
+}
+
+/** Mode de transmission de toutes les maladies en un appel ({ 'MONDO:…': 'AD' }). */
+async function inheritanceMap(mondoIds) {
+  try {
+    const r = await monarchInheritance(mondoIds);
+    const map = {};
+    for (const it of (r && r.items) || []) {
+      // Une maladie porte plusieurs termes HPO (« mosaïcisme somatique » à côté de
+      // « autosomique dominant ») : on ne retient que ceux de la table de transmission.
+      const code = INHERITANCE_HPO[it.object];
+      if (code && !map[it.subject]) map[it.subject] = code;
+    }
+    return map;
+  } catch (e) {
+    return {}; // transmission inconnue : le commentaire l'omet, comme avant
+  }
+}
+
+/** Fiche maladie Monarch — repli pour le MIM absent de l'association. */
+async function entityDetail(mondoId) {
+  try {
+    const d = await monarchDisease(mondoId);
+    const mapping = ((d && d.mappings) || []).find((m) => String(m.id).startsWith('OMIM:'));
+    const inh = d && d.inheritance;
+    return {
+      mim: mapping ? String(mapping.id).replace('OMIM:', '') : null,
+      inheritance: inh && inh.id ? (INHERITANCE_HPO[inh.id] || null) : null,
+    };
+  } catch (e) {
+    return { mim: null, inheritance: null }; // une maladie sans fiche ne bloque pas les autres
+  }
 }
 
 /** « Autosomal dominant », « AD », « X-linked recessive »… → AD / AR / XLR / XLD. */
@@ -277,37 +311,94 @@ export function normaliseInheritance(text) {
 }
 
 /**
+ * Identité du gène — HGNC, UniProt, MIM et GeneID NCBI.
+ *
+ * genenames.org rend les quatre en un appel de ~40 ms. mygene.info (~1,5 s) et
+ * E-utilities (~300 ms, limité à 3 req/s sans clé) restent en repli : la paire
+ * d'origine, inchangée.
+ */
+async function geneInfo(variant) {
+  const sym = variant.gene;
+  const acc = variant.transcript ? String(variant.transcript).split('.')[0] : null;
+  // Le symbole d'abord ; l'accession RefSeq rattrape les symboles que HGNC ne
+  // connaît que comme alias.
+  for (const path of [sym && `symbol/${encodeURIComponent(sym)}`,
+    acc && `refseq_accession/${encodeURIComponent(acc)}`].filter(Boolean)) {
+    try {
+      const d = await genenames(path);
+      if (d && d.hgnc_id) {
+        return {
+          hgncId: String(d.hgnc_id).replace('HGNC:', ''),
+          uniprot: first(d.uniprot_ids),
+          mim: first(d.omim_id),
+          ncbiGeneId: d.entrez_id ? String(d.entrez_id) : null,
+          lookup: 'genenames',
+        };
+      }
+    } catch (e) { /* forme suivante, puis mygene */ }
+  }
+
+  const [mg, gid] = await Promise.all([
+    acc ? mygene(variant.transcript).catch(() => null) : null,
+    sym ? ncbiGeneId(sym).catch(() => null) : null,
+  ]);
+  const hit = mg && mg.hits && mg.hits[0] ? mg.hits[0] : null;
+  return {
+    hgncId: hit && hit.HGNC ? String(hit.HGNC) : null,
+    uniprot: hit ? first(get(hit, 'uniprot.Swiss-Prot')) : null,
+    mim: hit ? first(hit.MIM) : null,
+    ncbiGeneId: gid || null,
+    lookup: 'mygene',
+  };
+}
+
+/**
  * Interroge toutes les sources en parallèle et assemble le contexte complet du variant.
  * Une source en panne laisse « n.a. » dans son champ et une entrée dans `errors`.
  */
 export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhenotypes = 12 } = {}) {
   const id = variant.gnomadId;
+
+  // Le gène est connu dès la normalisation : la chaîne des phénotypes
+  // (genenames → associations Monarch → transmission) est donc lancée **avec** les
+  // sources indexées sur les coordonnées, et non après elles. Elle attendait jusque-là
+  // la fin de settleAll — donc la plus lente des sources — et ajoutait ses ~1,2 s
+  // en fin d'analyse ; elle tient maintenant sous le temps de MyVariant.
+  const genePromise = geneInfo(variant);
+  const phenoPromise = genePromise.then((g) => buildPhenotypes({
+    // VariantValidator fournit HGNC : utile en repli si genenames et mygene tombent.
+    hgncId: g.hgncId || variant.hgncId || null,
+    geneMim: g.mim,
+    omimKey,
+    maxPhenotypes,
+  }));
+
   const { out, errors } = await settleAll({
     mv: () => myVariant(variant.myVariantId),
     g4: () => (id ? gnomad4(id) : Promise.resolve(null)),
     splice: () => (id ? spliceai(id) : Promise.resolve(null)),
     iv: () => (variant.ref ? intervar(variant.chr, variant.pos, variant.ref, variant.alt) : Promise.resolve(null)),
-    gene: () => (variant.transcript ? mygene(variant.transcript) : Promise.resolve(null)),
-    geneId: () => (variant.gene ? ncbiGeneId(variant.gene) : Promise.resolve(null)),
+    gene: () => genePromise,
+    phenotypes: () => phenoPromise,
+    // Total d'exons du repli VariantValidator — la réponse de VEP le porte déjà.
+    exons: () => (variant.exonTotalFor ? exonTotal(variant.exonTotalFor) : Promise.resolve(null)),
     mobi: () => (mobiKey && variant.hgvsc ? mobiDetailsId(variant.hgvsc, mobiKey) : Promise.resolve(null)),
   });
 
   const mv = out.mv && !out.mv.__notFound ? out.mv : null;
-  const hit = out.gene && out.gene.hits && out.gene.hits[0] ? out.gene.hits[0] : null;
-  const uniprot = hit ? (get(hit, 'uniprot.Swiss-Prot') || null) : null;
-  // VariantValidator fournit HGNC et GeneID : utile en repli si mygene ou E-utilities tombent.
-  const hgncId = (hit && hit.HGNC ? String(hit.HGNC) : null) || variant.hgncId || null;
-  const geneMim = hit ? (Array.isArray(hit.MIM) ? hit.MIM[0] : hit.MIM) : null;
+  const g = out.gene || {};
+  const hgncId = g.hgncId || variant.hgncId || null;
+  const geneMim = g.mim || null;
+  const phenotypes = out.phenotypes || { source: null, phenotypes: [] };
 
-  let phenotypes = { source: null, phenotypes: [] };
-  try {
-    phenotypes = await buildPhenotypes({ hgncId, geneMim, omimKey, maxPhenotypes });
-  } catch (e) {
-    errors.phenotypes = String(e.message || e);
-  }
+  // « 5 » → « 5/11 ». Un transcrit à n exons compte n−1 introns.
+  const total = out.exons && variant.loc === 'intron' ? out.exons - 1 : out.exons;
+  const withExons = total && variant.locNum
+    ? { ...variant, locField: `${variant.locNum}/${total}` }
+    : variant;
 
   return {
-    variant,
+    variant: withExons,
     source: variant.source || 'VEP',
     degraded: variant.degraded || null,
     notFoundInMyVariant: Boolean(out.mv && out.mv.__notFound),
@@ -319,10 +410,10 @@ export async function annotate(variant, { omimKey = null, mobiKey = null, maxPhe
     intervar: buildIntervar(out.iv),
     gene: {
       symbol: variant.gene,
-      uniprot: first(uniprot),
+      uniprot: g.uniprot || null,
       hgncId,
       mim: geneMim,
-      ncbiGeneId: out.geneId || variant.ncbiGeneId || null,
+      ncbiGeneId: g.ncbiGeneId || variant.ncbiGeneId || null,
     },
     phenotypes,
     mobiDetailsId: out.mobi || null,
