@@ -78,7 +78,7 @@ export function buildLinks(ctx, opts = {}) {
       ? `https://franklin.genoox.com/clinical-db/variant/snp/${vcf}-hg38?app=assessment-tools`
       : null, 'variant'),
     L('mobidetails', 'MobiDetails', ctx.mobiDetailsId
-      ? `https://mobidetails.chu-montpellier.fr/variants/${ctx.mobiDetailsId}`
+      ? `https://mobidetails.chu-montpellier.fr/api/variant/${ctx.mobiDetailsId}/browser/`
       : 'https://mobidetails.chu-montpellier.fr/',
     'variant', ctx.mobiDetailsId ? null : (lang === 'fr' ? "page d'accueil (pas de clé)" : 'home page (no key)')),
     L('intervar', 'InterVar', ref
