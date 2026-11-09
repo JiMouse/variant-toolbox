@@ -90,6 +90,20 @@ Ici, la phrase n'est écrite que si **faux-sens ET GERP conservé ET phyloP > 4*
 - **Brin négatif** — pour une saisie HGVS `c.` sur un gène du brin −, VEP renvoie les
   allèles dans le sens du transcrit. Ils sont complémentés pour que le pseudo-VCF,
   gnomAD, SpliceAI et InterVar reçoivent bien les allèles génomiques.
+- **Alignement des indels** — HGVS décale un indel vers la **droite** dans une
+  répétition, VCF l'aligne à **gauche**. Les deux formes sont donc calculées : la forme
+  alignée à gauche pour gnomAD, MyVariant, SpliceAI, InterVar et les liens ; la forme
+  HGVS pour la nomenclature du compte rendu. Sans cette étape, `p.Phe508del` sortait en
+  `7-117559591-TCTT-T`, introuvable dans gnomAD, et le commentaire annonçait une
+  variation « absente des bases de données de populations contrôle » pour la variation
+  CF la plus fréquente (forme correcte `7-117559590-ATCT-A`, AF ≈ 1,19 %).
+  Une saisie pseudo-VCF non normalisée est corrigée de la même façon.
+- **HGVS génomique** — la macro écrivait `g.{pos}{ref}>{alt}`, ce qui donne
+  `g.117559589CATCT>C` pour un indel. La notation HGVS correcte est utilisée ici
+  (`g.117559592_117559594del`).
+- **Liste de prédictions vide** — la macro pouvait écrire « discordants (délétère :  ;
+  toléré : SpliceAI) ». Une liste vide n'est plus écrite. **Le verdict lui-même n'a pas
+  été touché.**
 - Le bouton VEP de la macro appelle `VEP_url()`, **fonction absente du projet** ;
   le lien est reconstruit sur le modèle du lien VEP-splice.
 
@@ -104,6 +118,15 @@ validés reste sans bruit cosmétique :
 
 Ces trois points sont faciles à changer (`js/comment.js`) si vous le souhaitez.
 
+> **Point à arbitrer.** La règle `concordant_del` de la macro exige que **REVEL ou
+> MetaLR** soit délétère pour conclure « en faveur du caractère pathogène ». Or ces deux
+> outils ne notent que les faux-sens : pour un non-sens, un frameshift ou un variant
+> d'épissage ils valent toujours `n.a.`, et le verdict retombe donc **systématiquement
+> sur « discordants »**, même quand CADD et SpliceAI sont tous deux délétères
+> (voir `NM_007294.4:c.5467+1G>A` dans [docs/validation.md](docs/validation.md)).
+> Le comportement de la macro est conservé tel quel — c'est une décision clinique,
+> pas un détail de mise en forme. À changer dans `predictionVerdict()` si besoin.
+
 **Différences de fond à connaître** :
 - La macro écrivait la fréquence depuis **gnomAD v2.1.1**. Ici le commentaire utilise
   **v4.1** par défaut ; le sélecteur du panneau *Clés API* permet de repasser en
@@ -114,13 +137,18 @@ Ces trois points sont faciles à changer (`js/comment.js`) si vous le souhaitez.
 - Les champs dbNSFP sont des tableaux (une valeur par transcrit). La première valeur
   est retenue, comme dans la macro ; l'interface signale les valeurs discordantes.
 
-## Vérification hors navigateur
+## Vérification
 
 ```bash
+node tools/test-comment.mjs                                     # 46 contrôles, sans réseau
 node tools/validate.mjs "chr17-7675088-C-T:5"
 node tools/validate.mjs --lang en --links "NM_000546.6:c.524G>A:4"
 node tools/validate.mjs --gnomad v2.1.1 "chr17-7675088-C-T:5"   # comme la macro
 ```
+
+`tools/test-comment.mjs` exerce les dix sections du commentaire en FR et EN sans
+appel réseau. Les passages sur variants réels et ce qui reste à comparer avec vos
+commentaires de macro sont dans [docs/validation.md](docs/validation.md).
 
 Même chaîne que la page (`js/` est partagé), affichage des chiffres, des liens et du
 commentaire. Clés par variables d'environnement : `OMIM_KEY`, `MOBIDETAILS_KEY`.
@@ -138,7 +166,8 @@ js/comment.js       commentaire FR/EN
 js/links.js         liens
 js/i18n.js          libellés de l'interface
 js/app.js           câblage
-tools/validate.mjs  vérification en ligne de commande
+tools/validate.mjs  chaîne complète en ligne de commande
+tools/test-comment.mjs  tests du commentaire, sans réseau
 docs/cors.md        tests CORS
 ```
 
