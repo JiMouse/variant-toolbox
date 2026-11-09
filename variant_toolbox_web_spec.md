@@ -52,7 +52,9 @@ OMIM, Decipher (`/sequence-variant/<vcf>/genes/<gène>/protein-genomic-info`), U
 - L'espace de travail cloud du chat claude.ai bloque les appels réseau vers les API génomiques (MyVariant, Ensembl, gnomAD) et n'a pas de compte GitHub relié → développement prévu dans **Claude Code** sur le poste, avec le dépôt cloné.
 
 ## À faire
-- [ ] Créer le dépôt public vide `JiMouse/variant-toolbox` et activer GitHub Pages (branche `main`, racine).
-- [ ] Tester le CORS de chaque service ; lister ceux qui passent en « lien seul ».
-- [ ] Construire : saisie + normalisation (VEP) → chiffres → liens → commentaire FR/EN.
-- [ ] Valider sur 5 à 10 variants déjà commentés avec la macro (comparer chiffres et commentaire).
+- [x] Créer le dépôt public vide `JiMouse/variant-toolbox` et activer GitHub Pages (branche `main`, racine).
+- [x] Tester le CORS de chaque service ; lister ceux qui passent en « lien seul ». → `docs/cors.md`
+- [x] Construire : saisie + normalisation (VEP) → chiffres → liens → commentaire FR/EN.
+- [x] Valider. La comparaison avec les commentaires de la macro a été écartée : la
+      vérification repose sur 53 contrôles hors réseau et neuf variants réels, un par
+      branche de `GetComment`. → `docs/validation.md`

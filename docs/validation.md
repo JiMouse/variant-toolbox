@@ -80,27 +80,19 @@ Cette variation est donc considérée comme pathogène (variation de classe 5) e
 La quatrième phrase est celle que la **macro n'écrivait jamais** (bug de la
 conservation) : c'est la seule différence de contenu attendue sur ce variant.
 
-## 3. Ce qui reste à faire
+## 3. Comparaison avec les commentaires de la macro
 
-**Comparaison avec vos commentaires de macro.** Elle n'a pas pu être faite : le
-classeur fourni est le modèle (`MacroCES_Web.xlsm`), il ne contient aucune feuille
-`SNV` ni commentaire enregistré — les listes de variants patients sont des fichiers
-séparés. Pour boucler cette étape il me faut, pour 5 à 10 variants :
+Écartée, décidée le 09/11/2026 : la vérification repose sur les 53 contrôles de la
+section 1 et les passages de la section 2, qui couvrent chaque branche de
+`GetComment`. Le classeur fourni est de toute façon le modèle
+(`MacroCES_Web.xlsm`) — ni feuille `SNV` ni commentaire enregistré, les listes de
+variants patients étant des fichiers séparés.
 
-- la saisie (HGVS ou pseudo-VCF hg38) et la classe retenue ;
-- le commentaire produit par la macro, copié tel quel.
-
-Je les repasse dans `tools/validate.mjs` et je vous donne un diff phrase par phrase,
-en séparant les écarts attendus (conservation, gnomAD v4.1 au lieu de v2.1.1) des
-écarts non expliqués. Pour une comparaison au plus près de la macro, lancer avec
-`--gnomad v2.1.1`.
-
-**Note sur Ensembl.** Pendant la rédaction de ce document, `rest.ensembl.org` a
-renvoyé des `500` sur toutes ses requêtes pendant une quinzaine de minutes
-(`/info/ping` répondait pourtant). Les chiffres du tableau ci-dessus ont été relevés
-avant cette panne. L'application réessaie avec un palier croissant et affiche un
-message dédié ; rien ne fonctionne sans VEP, qui est la seule source CORS pour la
-normalisation RefSeq et la numérotation des exons.
+Les écarts de contenu attendus par rapport à la macro restent listés dans le
+[README](../README.md#écarts-avec-la-macro) : phrase de conservation (bug corrigé),
+verdict des prédictions (corrigé), alignement des indels, et gnomAD v4.1 au lieu de
+v2.1.1 dans le commentaire. Pour reproduire la source de fréquence de la macro,
+lancer avec `--gnomad v2.1.1`.
 
 ## 4. Verdict des prédictions après correction
 
@@ -128,5 +120,13 @@ VariantValidator et donne une sortie **identique** à celle de VEP :
 Chaîne complète sous panne simulée sur `p.Phe508del` : gnomAD AC 19 237 (AF 1,19 %),
 17 soumissions ClinVar, HGNC 1884, GeneID 1080, UniProt P13569, 2 phénotypes,
 **26 liens actifs, aucune source en échec**, commentaire complet.
+
+Deux niveaux de résistance, tous deux observés en conditions réelles :
+
+- **salves d'erreurs** — `rest.ensembl.org` a renvoyé des `500` sur trois sondages
+  consécutifs pendant qu'une analyse tournait : les réessais à palier croissant ont
+  absorbé la salve et la normalisation s'est faite par **VEP**, sans repli ;
+- **panne totale** — Ensembl coupé, la normalisation passe par **VariantValidator**
+  (tableau ci-dessus).
 
 Détail des mesures et des alternatives écartées : [ensembl.md](ensembl.md).

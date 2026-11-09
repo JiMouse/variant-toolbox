@@ -167,8 +167,8 @@ node tools/validate.mjs --gnomad v2.1.1 "chr17-7675088-C-T:5"   # comme la macro
 ```
 
 `tools/test-comment.mjs` exerce les dix sections du commentaire en FR et EN sans
-appel réseau. Les passages sur variants réels et ce qui reste à comparer avec vos
-commentaires de macro sont dans [docs/validation.md](docs/validation.md).
+appel réseau. Les passages sur variants réels sont dans
+[docs/validation.md](docs/validation.md).
 
 Même chaîne que la page (`js/` est partagé), affichage des chiffres, des liens et du
 commentaire. Clés par variables d'environnement : `OMIM_KEY`, `MOBIDETAILS_KEY`.
