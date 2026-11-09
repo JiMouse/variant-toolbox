@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>variant-toolbox</title>
+<meta name="description" content="Annotation de variants et rédaction du commentaire — version web de la ToolBox SNV.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>variant-toolbox</h1>
+    <p data-i18n="tagline"></p>
+  </div>
+  <div class="topbar-actions">
+    <button type="button" id="langToggle" class="lang" aria-label="FR / EN"><span id="langLabel">FR</span></button>
+    <button type="button" id="settingsToggle" class="ghost" data-i18n="settings"></button>
+  </div>
+</header>
+
+<section id="settings" class="panel settings" hidden>
+  <p class="help" data-i18n="settingsHelp"></p>
+  <div class="field">
+    <label for="omimKey" data-i18n="omimKey"></label>
+    <input type="password" id="omimKey" autocomplete="off" spellcheck="false">
+    <p class="help" data-i18n="omimKeyHelp"></p>
+  </div>
+  <div class="field">
+    <label for="mobiKey" data-i18n="mobiKey"></label>
+    <input type="password" id="mobiKey" autocomplete="off" spellcheck="false">
+    <p class="help" data-i18n="mobiKeyHelp"></p>
+  </div>
+  <div class="field">
+    <label for="gnomadVersion" data-i18n="gnomadForComment"></label>
+    <select id="gnomadVersion">
+      <option value="v4.1">gnomAD v4.1 (exomes + génomes)</option>
+      <option value="v2.1.1">gnomAD v2.1.1 (exomes)</option>
+    </select>
+  </div>
+  <div class="row">
+    <button type="button" id="saveKeys" class="primary" data-i18n="save"></button>
+    <button type="button" id="clearKeys" class="ghost" data-i18n="clear"></button>
+    <span id="keysStatus" class="status" role="status"></span>
+  </div>
+</section>
+
+<main>
+  <form id="queryForm" class="panel query">
+    <div class="field grow">
+      <label for="variantInput" data-i18n="inputLabel"></label>
+      <input type="text" id="variantInput" autocomplete="off" spellcheck="false" autocapitalize="off" required>
+      <p class="help" data-i18n="inputHelp"></p>
+    </div>
+    <div class="field">
+      <span class="label" data-i18n="classLabel"></span>
+      <div class="classes" role="radiogroup" id="classGroup">
+        <label><input type="radio" name="vclass" value="3" checked><span>3</span></label>
+        <label><input type="radio" name="vclass" value="4"><span>4</span></label>
+        <label><input type="radio" name="vclass" value="5"><span>5</span></label>
+      </div>
+    </div>
+    <button type="submit" id="submitBtn" class="primary" data-i18n="analyse"></button>
+  </form>
+
+  <p id="message" class="message" role="status" hidden></p>
+
+  <div id="results" hidden>
+    <section class="panel">
+      <h2 data-i18n="identity"></h2>
+      <dl id="identity" class="kv"></dl>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2 data-i18n="numbers"></h2>
+        <dl id="numbers" class="kv"></dl>
+        <h3 data-i18n="gnomad"></h3>
+        <div class="table-wrap"><table id="gnomadTable"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2 data-i18n="predictions"></h2>
+        <div class="table-wrap"><table id="predTable"></table></div>
+        <h3 data-i18n="conservation"></h3>
+        <div class="table-wrap"><table id="consTable"></table></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2 data-i18n="phenotypes"></h2>
+      <div id="phenotypes"></div>
+    </section>
+
+    <section class="panel">
+      <h2 data-i18n="links"></h2>
+      <div id="links" class="links"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 data-i18n="comment"></h2>
+        <div class="row">
+          <button type="button" id="regenBtn" class="ghost" data-i18n="regenerate"></button>
+          <button type="button" id="copyBtn" class="primary" data-i18n="copy"></button>
+        </div>
+      </div>
+      <textarea id="comment" rows="22" spellcheck="false"></textarea>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <a href="https://github.com/JiMouse/variant-toolbox">JiMouse/variant-toolbox</a>
+  · <a href="docs/cors.md">CORS</a>
+  · <span id="footNote"></span>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Le classeur macro n'a pas sa place dans le dépôt public (clé API MobiDetails en dur)
+*.xlsm
+*.xlsx
+.DS_Store
+node_modules/
