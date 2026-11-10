@@ -63,7 +63,7 @@ retombe silencieusement sur Monarch.
 Le détail des tests CORS — et la liste de ce qui reste en **lien seul** — est dans
 [docs/cors.md](docs/cors.md). En résumé : seuls **CADD**, **OMIM** et **Orphanet**
 refusent les appels depuis une page web. Le score CADD phred vient donc de MyVariant
-(le même champ que lisait la macro) et le bouton CADD reste un lien.
+(le même champ que lisait la macro).
 
 **Ensembl** : les deux formes de saisie passent par `GET /vep/human/hgvs`, mesuré à
 14/14 là où `GET /vep/human/region` échoue 8 fois sur 14. Ensembl ne tombe pas

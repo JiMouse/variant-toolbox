@@ -57,9 +57,6 @@ export function buildLinks(ctx, opts = {}) {
     L('lovd', 'LOVD', gene
       ? `https://databases.lovd.nl/shared/genes/${enc(gene)}`
       : null, 'gene'),
-    L('mane', 'MANE (nuccore)', gene
-      ? `https://ncbi.nlm.nih.gov/nuccore/?term=${enc(gene)}[gene]%20AND%20MANE%20Select[keyword]&report=accnlist`
-      : null, 'gene'),
     L('uniprot', 'UniProt', uniprot
       ? `https://www.uniprot.org/uniprotkb/${enc(uniprot)}/entry#family_and_domains`
       : null, 'gene'),
@@ -97,16 +94,6 @@ export function buildLinks(ctx, opts = {}) {
       : null, 'pop'),
 
     // — Prédiction et annotation
-    L('cadd', 'CADD', ref
-      ? `https://cadd.gs.washington.edu/api/v1.0/GRCh38-v1.6/${chr}:${pos}_${ref}_${alt}`
-      : null, 'pred', lang === 'fr' ? 'lien seul (pas de CORS)' : 'link only (no CORS)'),
-    L('vep', 'VEP', v.hgvsc
-      ? `https://rest.ensembl.org/vep/human/hgvs/${enc(v.hgvsc)}?content-type=application/xml;refseq=1`
-      : null, 'pred'),
-    L('vepsplice', 'VEP splice', v.hgvsc
-      ? `https://rest.ensembl.org/vep/human/hgvs/${enc(v.hgvsc)}?content-type=application/xml;refseq=1`
-        + ';GeneSplicer=1;MaxEntScan=1;SpliceAI=1;SpliceRegion=1;dbscSNV=1'
-      : null, 'pred'),
     L('myvariant', 'MyVariant.info', v.myVariantId
       ? `https://myvariant.info/v1/variant/${enc(v.myVariantId)}?assembly=hg38`
       : null, 'pred'),

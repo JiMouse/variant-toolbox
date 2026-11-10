@@ -15,7 +15,7 @@ Test effectué le 09/11/2026 depuis l'origine `https://jimouse.github.io`
 | Monarch Initiative | `api.monarchinitiative.org/v3/api/` | `*` | ✅ **chiffres** (source libre phénotypes) |
 | MobiDetails | `mobidetails.chu-montpellier.fr/api/` | reflète l'origine | ✅ **chiffres** (avec clé) |
 | UCSC (API REST) | `api.genome.ucsc.edu/getData/{track,sequence}` | `*` | ✅ **chiffres** (structure exonique, séquence de référence) |
-| CADD | `cadd.gs.washington.edu/api/v1.0/GRCh38-v1.6/` | *aucun* | ❌ **lien seul** → CADD phred lu dans MyVariant |
+| CADD | `cadd.gs.washington.edu/api/v1.0/GRCh38-v1.6/` | *aucun* | ❌ **non interrogé** → CADD phred lu dans MyVariant |
 | OMIM | `api.omim.org/api/entry` | *aucun* | ❌ **lien seul** → repli Monarch |
 | Orphanet | `api.orphacode.org` | reflète l'origine, mais 401 | ❌ **lien seul** (clé requise) |
 
@@ -29,7 +29,7 @@ L'application interroge l'hôte documenté en premier, puis bascule sur Cloud Ru
 
 **CADD.** Le service répond 200 mais **sans aucun en-tête CORS** : un navigateur refuse donc
 la lecture de la réponse. Le score CADD phred vient de MyVariant (`dbnsfp.cadd.phred`),
-identique au champ utilisé par la macro ; le bouton CADD reste un lien.
+identique au champ utilisé par la macro ; l'application n'appelle donc jamais CADD.
 
 **OMIM.** Pas d'en-tête CORS, même avec une clé. L'application tente l'appel si une clé est
 saisie (utile derrière un proxy) et retombe silencieusement sur Monarch en cas d'échec.
