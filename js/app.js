@@ -354,6 +354,28 @@ function render() {
   $('results').hidden = false;
 }
 
+/**
+ * Efface l'écran de résultats.
+ *
+ * Appelé au début de **chaque** analyse. Sans cela, les panneaux du variant
+ * précédent restaient affichés pendant toute la normalisation du suivant — une
+ * seconde quand tout va bien, dix quand une source tarde — et rien ne disait
+ * qu'ils ne décrivaient pas le variant que l'on venait de saisir. Le commentaire
+ * du variant précédent restait même copiable. En diagnostic, cette confusion est
+ * inacceptable : l'écran ne doit jamais montrer les chiffres d'un variant sous
+ * l'identité d'un autre.
+ */
+function clearResults() {
+  ctx = null;
+  $('results').hidden = true;
+  ['identity', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'phenotypes', 'links']
+    .forEach((id) => { $(id).textContent = ''; });
+  $('comment').value = '';
+  $('comment').classList.remove('awaiting');
+  $('copyBtn').disabled = true;
+  $('regenBtn').disabled = true;
+}
+
 /* ---------- messages ---------- */
 
 function message(text, kind = 'info') {
@@ -421,6 +443,10 @@ function withDeadline(promise, ms) {
 async function run() {
   if (busy) return;
   const query = $('variantInput').value.trim();
+  // Toute nouvelle soumission efface l'écran — y compris quand la saisie est
+  // refusée d'emblée : un message d'erreur posé au-dessus des résultats du variant
+  // précédent laisse croire qu'ils décrivent celui que l'on vient de taper.
+  clearResults();
   const parsed = parseInput(query);
   if (parsed.kind === 'empty') { message(t(lang, 'errEmpty'), 'error'); return; }
   if (parsed.kind === 'unknown') { message(t(lang, 'errUnknown'), 'error'); return; }
@@ -430,7 +456,11 @@ async function run() {
   startProgress();
   try {
     const variant = await withDeadline(
-      normalize(parsed, { onProgress: () => setProgressStage('progressFallback') }),
+      normalize(parsed, {
+        onProgress: (what) => setProgressStage(what === 'fallbackFailed'
+          ? 'progressFallbackFailed'
+          : 'progressFallback'),
+      }),
       60000,
     );
     setProgressStage('progressAnnotating');
@@ -463,6 +493,7 @@ async function run() {
   } catch (e) {
     stopProgress();
     const msg = String(e && e.message ? e.message : e);
+    const code = e && e.code;
     // Délai global dépassé mais des sources ont répondu : on garde ce qui est affiché
     // plutôt que de tout effacer — l'utilisateur voit au moins l'identité et les
     // chiffres arrivés, et le commentaire reste volontairement non rédigé.
@@ -471,14 +502,18 @@ async function run() {
       setBusy(false);
       return;
     }
-    if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
+    // Les codes d'abord : le message d'une panne de normalisation agrège les causes
+    // des deux services et contient donc parfois « Failed to fetch » ou « VEP: … »,
+    // qui ne doivent pas détourner le diagnostic vers une branche moins précise.
+    if (code === 'SOURCES_UNAVAILABLE') message(t(lang, 'errSourcesDown', { msg }), 'error');
+    else if (code === 'VARIANT_REJECTED') message(t(lang, 'errRejected', { msg }), 'error');
+    else if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
     else if (msg === 'EMPTY_INPUT') message(t(lang, 'errEmpty'), 'error');
-    else if (/Failed to fetch|NetworkError|load failed/i.test(msg)) message(t(lang, 'errNetwork'), 'error');
     else if (msg === 'UNRECOGNISED_INPUT') message(t(lang, 'errUnknown'), 'error');
+    else if (/Failed to fetch|NetworkError|load failed/i.test(msg)) message(t(lang, 'errNetwork'), 'error');
     else if (msg.startsWith('VEP')) message(t(lang, 'errVep', { msg }), 'error');
     else message(t(lang, 'errGeneric', { msg }), 'error');
-    $('results').hidden = true;
-    ctx = null;
+    clearResults();
   } finally {
     stopProgress();
     setBusy(false);
@@ -578,6 +613,8 @@ $('omimKey').value = store.get('vt.omimKey');
 $('mobiKey').value = store.get('vt.mobiKey');
 $('gnomadVersion').value = store.get('vt.gnomadVersion', 'v4.1');
 $('variantInput').value = store.get('vt.lastQuery');
+// Aucun résultat à l'ouverture : Copier et Régénérer n'ont rien à opérer.
+clearResults();
 applyLang();
 
 // Partage d'un variant par l'URL : ?v=chr17-7675088-C-T&class=5&lang=fr

@@ -11,6 +11,8 @@ export const UI = {
     analysing: 'Analyse…',
     progressNormalising: 'Normalisation du variant… ({s} s)',
     progressFallback: 'Ensembl tarde à répondre — repli sur VariantValidator… ({s} s)',
+    progressFallbackFailed: 'VariantValidator indisponible — dernière chance laissée '
+      + 'à Ensembl… ({s} s)',
     progressAnnotating: 'Interrogation des bases… ({s} s)',
     errTimeout: 'Délai dépassé : aucune source n\u2019a répondu. Relancer l\u2019analyse.',
     settings: 'Clés API',
@@ -74,6 +76,11 @@ export const UI = {
     errEmpty: 'Saisir un variant.',
     errUnknown: 'Saisie non reconnue. Attendu : NM_…:c.… ou chr-pos-ref-alt (hg38).',
     errVep: 'VEP n’a pas pu normaliser ce variant : {msg}',
+    errSourcesDown: 'Les deux services de normalisation sont momentanément indisponibles '
+      + '(Ensembl VEP et VariantValidator). Aucune analyse n’est possible sans eux : '
+      + 'réessayer dans quelques minutes. Détail : {msg}',
+    errRejected: 'Ce variant n’a pas pu être validé : {msg}. Vérifier le transcrit, '
+      + 'la position et la base de référence (génome hg38).',
     errNetwork: 'Service Ensembl momentanément indisponible (il renvoie des erreurs par salves). Relancer l’analyse.',
     fallbackSource: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. Vérifier le transcrit et le type de variation.',
     degradedConsequence: 'Type de variation non déterminé par la source de repli : la phrase correspondante est omise du commentaire.',
@@ -101,6 +108,8 @@ export const UI = {
     analysing: 'Analysing…',
     progressNormalising: 'Normalising the variant… ({s} s)',
     progressFallback: 'Ensembl is slow to answer — falling back to VariantValidator… ({s} s)',
+    progressFallbackFailed: 'VariantValidator unavailable — giving Ensembl its last '
+      + 'chance… ({s} s)',
     progressAnnotating: 'Querying the databases… ({s} s)',
     errTimeout: 'Timed out: no source answered. Run the analysis again.',
     settings: 'API keys',
@@ -164,6 +173,11 @@ export const UI = {
     errEmpty: 'Enter a variant.',
     errUnknown: 'Input not recognised. Expected: NM_…:c.… or chr-pos-ref-alt (hg38).',
     errVep: 'VEP could not normalise this variant: {msg}',
+    errSourcesDown: 'Both normalisation services are briefly unavailable '
+      + '(Ensembl VEP and VariantValidator). No analysis is possible without them: '
+      + 'try again in a few minutes. Detail: {msg}',
+    errRejected: 'This variant could not be validated: {msg}. Check the transcript, '
+      + 'the position and the reference base (hg38 genome).',
     errNetwork: 'The Ensembl service is briefly unavailable (it returns errors in bursts). Run the analysis again.',
     fallbackSource: 'Normalisation done by {src}: Ensembl too slow or unavailable. Check the transcript and the variant type.',
     degradedConsequence: 'The fallback source could not determine the variant type: that sentence is omitted from the comment.',

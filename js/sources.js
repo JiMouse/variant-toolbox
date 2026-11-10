@@ -110,16 +110,23 @@ const MYVARIANT_FIELDS = [
  * MyVariant.info : dbNSFP, CADD, ClinVar, gnomAD v2.1.1 exomes. `id` est un HGVS génomique.
  *
  * Même défaut qu'Ensembl : le service ne refuse pas, il **laisse pendre** la connexion
- * par intermittence. Une requête suspendue coûtait 8 s de délai puis un réessai qui
- * aboutissait en 1,7 s — 10,5 s d'analyse pour une donnée normalement rendue en
- * ~350 ms. La requête est donc doublée si rien n'est revenu au bout de 1,5 s, et la
- * première réponse gagne : c'est la parade déjà employée pour VEP (voir `hedge`).
+ * par intermittence (mesuré 0,77 / 0,79 / 0,86 / 3,05 / 16,15 s sur cinq appels
+ * identiques). La requête est donc doublée si rien n'est revenu au bout de 1,5 s, et
+ * la première réponse gagne : c'est la parade déjà employée pour VEP (voir `hedge`).
  * Un GET idempotent, donc sans effet de bord à être émis deux fois.
+ *
+ * `retries: 0` sur chaque branche, car le doublement **est** le réessai. Avec
+ * `retries: 1`, les deux branches en réessayaient une de plus chacune : quatre
+ * requêtes, et un pire cas de 1,5 + 8 + 0,8 + 8 ≈ 18 s pour cette seule source —
+ * mesuré à 19,7 s d'analyse complète, alors que le commentaire attend justement
+ * que toutes les sources aient répondu. Sans ces réessais le pire cas tombe à
+ * 9,5 s, et le mode de panne visé — une connexion pendante — est de toute façon
+ * traité par la requête parallèle, pas par un réessai en série.
  */
 export function myVariant(id) {
   const url = `https://myvariant.info/v1/variant/${encodeURIComponent(id)}`
     + `?assembly=hg38&fields=${encodeURIComponent(MYVARIANT_FIELDS)}`;
-  const once = () => fetchJSON(url, { retries: 1, timeout: 8000 });
+  const once = () => fetchJSON(url, { retries: 0, timeout: 8000 });
   return hedge(once, once, { delay: 1500 });
 }
 
@@ -302,11 +309,24 @@ export async function mobiDetailsId(hgvs, apiKey) {
 
 const VV = 'https://rest.variantvalidator.org/VariantValidator';
 
-/** Validation/normalisation d'un variant. `desc` est un HGVS c. ou g. (accession NC_). */
+/**
+ * Validation/normalisation d'un variant. `desc` est un HGVS c. ou g. (accession NC_).
+ *
+ * `retries: 0`, pour la même raison que `vepHgvs` : cet appel est déjà le **repli**
+ * d'une course (voir normalize), et VEP continue la sienne en parallèle. Le réessayer
+ * ne fait que doubler le pire cas.
+ *
+ * Et ce pire cas était lourd : en maintenance, VariantValidator ne refuse pas vite —
+ * sa page « 503 Service Unavailable » met 15 s à arriver (mesuré 15,16 / 15,17 /
+ * 15,18 s, soit un délai de passerelle en amont). Avec un réessai, le repli coûtait
+ * 15 + 0,8 + 15 ≈ 31 s avant que l'analyse rende la main, alors que l'échec était
+ * acquis dès la première réponse. Un service en bonne santé répond en ~2,2 s : 12 s
+ * laissent 5× cette marge tout en bornant la panne à 12 s au lieu de 31.
+ */
 export function variantValidator(desc, selectTranscripts = 'mane') {
   const url = `${VV}/variantvalidator/GRCh38/${encodeURIComponent(desc)}/${selectTranscripts}`
     + '?content_type=application/json';
-  return fetchJSON(url, { retries: 1, timeout: 20000 });
+  return fetchJSON(url, { retries: 0, timeout: 12000 });
 }
 
 /** Structure exonique d'un transcrit — pour le total d'exons (« 5/11 »). */

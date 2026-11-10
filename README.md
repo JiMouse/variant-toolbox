@@ -73,6 +73,17 @@ bascule de même sur l'**API REST d'UCSC**. Une analyse qui prenait 103 s pendan
 épisode de lenteur en prend 1,4. L'interface affiche un compteur d'avancement et
 plafonne chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ensembl.md).
 
+Quand les **deux** sources tombent ensemble — c'est arrivé, Ensembl en HTTP 500 et
+VariantValidator en maintenance — aucune analyse n'est possible : sans gène ni
+coordonnées, aucune base n'est interrogeable. L'interface le dit alors explicitement,
+avec le détail par service, et distingue deux cas qu'il ne faut pas confondre : les
+services sont **tombés** (délai, 503) et il faut réessayer plus tard, ou l'un d'eux a
+**répondu en refusant** le variant (base de référence qui ne correspond pas, transcrit
+inconnu) et c'est la saisie qu'il faut corriger. Un refus l'emporte sur une panne : il
+renseigne, là où réessayer ne changerait rien. Le repli est borné à 12 s, car la page
+« 503 » de VariantValidator met elle-même 15 s à arriver et la réessayer portait la
+panne à 31 s.
+
 ## Temps d'analyse
 
 | Situation | Durée |
@@ -87,6 +98,11 @@ mesure que les sources répondent. Une valeur encore en vol s'affiche « … » 
 Le **commentaire n'est pas rédigé tant qu'une source manque**, et les boutons Copier et
 Régénérer restent désactivés : un commentaire partiel annoncerait des absences non
 vérifiées.
+
+Chaque nouvelle analyse **efface l'écran** avant de commencer — y compris quand la
+saisie est refusée d'emblée. Les panneaux du variant précédent ne restent donc jamais
+affichés pendant la normalisation du suivant, et son commentaire n'est plus copiable :
+l'écran ne doit jamais montrer les chiffres d'un variant sous l'identité d'un autre.
 
 Profil détaillé, latence mesurée de chaque service et les huit corrections qui ont fait
 passer l'analyse de 7,8–8,9 s à moins d'une seconde : [docs/latence.md](docs/latence.md).

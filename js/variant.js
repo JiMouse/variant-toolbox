@@ -8,7 +8,7 @@ import {
   vepHgvs, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
   variantValidator, variantValidatorTranscript, NC_ACCESSION,
 } from './sources.js';
-import { hedge } from './util.js';
+import { hedge, errorText } from './util.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -260,6 +260,44 @@ export function genomicHgvs(item) {
 const VEP_HEDGE_DELAY = 200;
 
 /**
+ * Un service n'a pas répondu — par opposition à un service qui a répondu en
+ * refusant le variant.
+ *
+ * Seuls 5xx, 429 et 408 sont des pannes. Un 400 ou un 422 est au contraire une
+ * **réponse** : le service a lu la description et l'a jugée invalide. Les ranger
+ * parmi les pannes ferait conseiller « réessayer dans quelques minutes » pour une
+ * saisie qui ne sera jamais acceptée.
+ */
+function isUnavailable(e) {
+  if (!e) return false;
+  if (e.code === 'TIMEOUT') return true;
+  if (typeof e.status === 'number') return e.status >= 500 || e.status === 429 || e.status === 408;
+  return /Failed to fetch|NetworkError|load failed/i.test(errorText(e));
+}
+
+/**
+ * Échec des deux sources de normalisation : la seule panne qui empêche toute
+ * analyse — sans gène ni coordonnées, aucune base n'est interrogeable.
+ *
+ * Les deux cas qu'il ne faut **pas** confondre :
+ *   — les services sont tombés (délai, 503) : le variant est peut-être parfait, il
+ *     faut réessayer plus tard ;
+ *   — un service a répondu et a **refusé** le variant (base de référence qui ne
+ *     correspond pas, transcrit inconnu) : réessayer n'y changera rien, c'est la
+ *     saisie qu'il faut corriger.
+ * Un refus l'emporte sur une panne : si VariantValidator dit « variant non validé »
+ * pendant qu'Ensembl laisse pendre la connexion, c'est le refus qui renseigne.
+ */
+function normaliseFailure(causes) {
+  const refusals = causes.filter((c) => !isUnavailable(c));
+  const shown = refusals.length ? refusals : causes;
+  const err = new Error([...new Set(shown.map(errorText))].join(' · '));
+  err.code = refusals.length ? 'VARIANT_REJECTED' : 'SOURCES_UNAVAILABLE';
+  err.causes = causes;
+  return err;
+}
+
+/**
  * Normalise une saisie en un objet variant complet.
  * @returns {Promise<object>} chr, pos, ref, alt, pseudoVcf, gene, transcript, isMane, …
  */
@@ -282,14 +320,27 @@ export async function normalize(input, { onProgress = null } = {}) {
     return it;
   };
 
+  // Le repli signale aussi son **échec** : quand VariantValidator tombe à son tour,
+  // il reste à attendre le délai d'Ensembl (8 s) sans que rien ne l'explique, et
+  // l'interface continuait d'annoncer « repli sur VariantValidator » — exactement
+  // l'inverse de ce qui se passait.
+  const viaFallback = async () => {
+    try {
+      return await normalizeViaVariantValidator(parsed);
+    } catch (e) {
+      if (onProgress) onProgress('fallbackFailed');
+      throw e;
+    }
+  };
+
   let item;
   try {
-    item = await hedge(viaVep, () => normalizeViaVariantValidator(parsed), {
+    item = await hedge(viaVep, viaFallback, {
       delay: VEP_HEDGE_DELAY,
       onSecondary: () => { if (onProgress) onProgress('fallback'); },
     });
   } catch (e) {
-    throw new Error(e && e.message ? e.message : String(e));
+    throw normaliseFailure((e && e.causes) || [e]);
   }
 
   // La course peut être gagnée par le repli, qui renvoie déjà un variant complet.

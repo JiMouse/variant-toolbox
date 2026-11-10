@@ -47,6 +47,33 @@ export function isNum(v) {
   return v !== null && v !== undefined && v !== NA && v !== '' && !Number.isNaN(Number(v));
 }
 
+/** Hôte d'une URL, pour nommer le service fautif dans un message d'erreur. */
+export function serviceOf(url) {
+  try { return new URL(url).host.replace(/^www\./, ''); } catch (e) { return String(url); }
+}
+
+/** Message lisible d'une erreur, quelle que soit sa forme (Error, DOMException, chaîne). */
+export function errorText(e) {
+  if (!e) return 'erreur inconnue';
+  return String(e.message || e);
+}
+
+/**
+ * Erreur de délai dépassé, **nommée**.
+ *
+ * `AbortController.abort()` appelé sans motif fait rejeter `fetch` avec une
+ * DOMException dont le message — « signal is aborted without reason » — ne dit ni
+ * quel service, ni qu'il s'agit d'un délai. Remontée telle quelle jusqu'à
+ * l'interface, elle s'affichait en « Échec de l'analyse : signal is aborted without
+ * reason », message illisible pour l'utilisateur et inutilisable pour le diagnostic.
+ */
+function timeoutError(url, ms) {
+  const err = new Error(`Délai dépassé (${Math.round(ms / 1000)} s) — ${serviceOf(url)}`);
+  err.code = 'TIMEOUT';
+  err.service = serviceOf(url);
+  return err;
+}
+
 /** fetch avec timeout, réessais et délai croissant — Ensembl renvoie des 503 sous charge. */
 export async function fetchJSON(url, opts = {}) {
   const { retries = 3, timeout = 30000, expect = 'json', ...init } = opts;
@@ -56,20 +83,25 @@ export async function fetchJSON(url, opts = {}) {
     // (sans en-tête CORS, donc vues du navigateur comme un simple échec réseau).
     if (attempt > 0) await sleep(Math.min(800 * 2 ** (attempt - 1), 8000));
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeout);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, timeout);
     try {
       const res = await fetch(url, { ...init, signal: ctrl.signal });
       // 404 = variation absente du service : une réponse, pas une panne. On ne réessaie pas.
       if (res.status === 404) return { __notFound: true, __status: 404 };
       if (!res.ok) {
         const retryable = res.status >= 500 || res.status === 429;
-        lastErr = new Error(`HTTP ${res.status} — ${url}`);
+        lastErr = new Error(`HTTP ${res.status} — ${serviceOf(url)}`);
+        lastErr.code = `HTTP_${res.status}`;
+        lastErr.status = res.status;
+        lastErr.service = serviceOf(url);
         if (!retryable || attempt === retries) throw lastErr;
         continue;
       }
       return expect === 'text' ? await res.text() : await res.json();
     } catch (e) {
-      lastErr = e;
+      // Notre propre délai, et non une annulation venue d'ailleurs : on le nomme.
+      lastErr = timedOut ? timeoutError(url, timeout) : e;
       if (attempt === retries) throw lastErr;
     } finally {
       clearTimeout(timer);
@@ -144,11 +176,26 @@ export function hedge(primary, secondary, { delay = 2500, onSecondary = null } =
       if (timer) clearTimeout(timer);
       resolve(value);
     };
+    /**
+     * Les deux sources ont échoué : l'erreur rendue porte les **deux** causes.
+     *
+     * `reject(primaryErr)` seul effaçait l'information utile. Quand Ensembl laisse
+     * pendre la connexion et que VariantValidator répond 503, la cause rendue était
+     * le délai d'Ensembl, et le 503 — le vrai motif pour lequel l'analyse n'a pas
+     * pu se replier — n'apparaissait nulle part.
+     */
     const maybeFail = () => {
       if (settled || !primaryDone || !secondaryDone) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      reject(primaryErr || secondaryErr);
+      const causes = [primaryErr, secondaryErr].filter(Boolean);
+      // `hedge` sert aussi à doubler une même requête (MyVariant) : deux causes
+      // identiques ne sont pas deux pannes.
+      const seen = [...new Set(causes.map(errorText))];
+      const err = new Error(seen.join(' · ') || 'les deux sources ont échoué');
+      err.code = 'ALL_FAILED';
+      err.causes = causes;
+      reject(err);
     };
 
     const startSecondary = () => {
