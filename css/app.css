@@ -90,7 +90,11 @@ footer a { color: var(--muted); }
 .panel-head h2 { margin: 0; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+/* Identité + liens : l'identité n'a pas besoin de la moitié de l'écran, ses
+   valeurs les plus longues (HGVS g., pseudo-VCF) tiennent dans 400 px sans se
+   couper. Le reste va aux liens, dont les pastilles s'y répartissent mieux. */
+.grid.split { grid-template-columns: minmax(400px, 2fr) minmax(0, 3fr); }
+@media (max-width: 860px) { .grid, .grid.split { grid-template-columns: 1fr; } }
 
 /* — Formulaire — */
 
