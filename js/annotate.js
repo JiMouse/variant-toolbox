@@ -7,6 +7,7 @@ import {
   monarchDiseases, monarchDisease, monarchInheritance, omimGeneMap, mobiDetailsId,
 } from './sources.js';
 import { exonTotal } from './variant.js';
+import { fetchStructure } from './structure.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
 
 export const DEL = 'del';
@@ -368,16 +369,27 @@ function assemble(variant, out, errors, pending) {
   const phenotypes = out.phenotypes || { source: null, phenotypes: [] };
 
   // « 5 » → « 5/11 ». Un transcrit à n exons compte n−1 introns.
-  const total = out.exons && variant.loc === 'intron' ? out.exons - 1 : out.exons;
-  const withExons = total && variant.locNum
+  const struct = out.struct || null;
+  const exons = struct ? struct.total : null;
+  const total = exons && variant.loc === 'intron' ? exons - 1 : exons;
+  const withExons = total && variant.locNum && !String(variant.locField || '').includes('/')
     ? { ...variant, locField: `${variant.locNum}/${total}` }
     : variant;
+
+  /* La structure exonique n'alimente le commentaire que lorsqu'elle porte le total
+   * d'exons que la normalisation n'a pas donné — « exon 5 » → « exon 5/11 », le cas du
+   * repli VariantValidator. Dans ce cas seul, le commentaire l'attend. Sinon elle n'est
+   * que **dessinée** (voir js/schema.js), et la faire attendre retarderait le
+   * commentaire de la latence d'UCSC sans changer un mot de son texte. */
+  const structFeedsComment = Boolean(variant.loc && variant.locNum
+    && !String(variant.locField || '').includes('/'));
 
   return {
     variant: withExons,
     source: variant.source || 'VEP',
     degraded: variant.degraded || null,
     pending: [...pending],
+    pendingComment: [...pending].filter((k) => k !== 'struct' || structFeedsComment),
     complete: pending.size === 0,
     notFoundInMyVariant: Boolean(out.mv && out.mv.__notFound),
     predictions: buildPredictions(mv, out.splice),
@@ -394,6 +406,7 @@ function assemble(variant, out, errors, pending) {
       ncbiGeneId: g.ncbiGeneId || variant.ncbiGeneId || null,
     },
     phenotypes,
+    structure: struct,
     mobiDetailsId: out.mobi || null,
     rsid: variant.rsid || (out.g4 && get(out.g4, 'data.variant.rsids') ? first(get(out.g4, 'data.variant.rsids')) : null)
       || first(get(mv, 'dbsnp.rsid')) || null,
@@ -435,8 +448,20 @@ export async function annotate(variant, {
     iv: () => (variant.ref ? intervar(variant.chr, variant.pos, variant.ref, variant.alt) : Promise.resolve(null)),
     gene: () => genePromise,
     phenotypes: () => phenoPromise,
-    // Total d'exons du repli VariantValidator — la réponse de VEP le porte déjà.
-    exons: () => (variant.exonTotalFor ? exonTotal(variant.exonTotalFor) : Promise.resolve(null)),
+    // Structure exonique du transcrit (UCSC) : les deux schémas, et au passage le
+    // total d'exons que le repli VariantValidator ne donne pas. `gene2transcripts`
+    // reste le repli pour ce seul total — 203 KiB pour un entier, à n'appeler que
+    // lorsque la structure elle-même a échoué.
+    struct: async () => {
+      try {
+        const st = await fetchStructure(variant);
+        if (st) return st;
+      } catch (e) {
+        if (!variant.exonTotalFor) throw e;
+      }
+      const n = variant.exonTotalFor ? await exonTotal(variant.exonTotalFor) : null;
+      return n ? { structure: null, location: null, total: n } : null;
+    },
     mobi: () => (mobiKey && variant.hgvsc ? mobiDetailsId(variant.hgvsc, mobiKey) : Promise.resolve(null)),
   };
 

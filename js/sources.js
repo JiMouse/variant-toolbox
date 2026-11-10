@@ -346,3 +346,26 @@ export const NC_ACCESSION = {
   21: 'NC_000021.9', 22: 'NC_000022.11', X: 'NC_000023.11', Y: 'NC_000024.10',
   M: 'NC_012920.1',
 };
+
+/**
+ * Structure exonique des transcrits RefSeq couvrant une position hg38 (API UCSC).
+ *
+ * Une requête d'**une seule base** suffit : l'API renvoie tous les enregistrements qui
+ * *chevauchent* l'intervalle demandé, donc le transcrit entier — exonStarts/exonEnds,
+ * cdsStart/cdsEnd, brin et nombre d'exons — dès lors que la variation tombe dedans.
+ * Mesuré à 13 KiB et ~0,7 s (1,6 KiB sur CFTR, 16 KiB sur DMD), là où
+ * `gene2transcripts` de VariantValidator rend **203 KiB en 1,5 à 3,4 s** pour la même
+ * information, sans le brin ni les bornes du CDS. `gene2transcripts_v2`, plus léger,
+ * ne renvoie jamais `genomic_spans` : il ne peut pas servir ici.
+ *
+ * Même hôte que le repli de séquence de référence (`refSeq`), et même en-tête
+ * `Access-Control-Allow-Origin: *`.
+ */
+export async function ucscRefSeq(chr, pos) {
+  const p = Number(pos);
+  const url = 'https://api.genome.ucsc.edu/getData/track?genome=hg38;track=ncbiRefSeq'
+    + `;chrom=chr${chr};start=${p - 1};end=${p}`;
+  const r = await fetchJSON(url, { retries: 1, timeout: 8000 });
+  const items = r && (r.ncbiRefSeq || (r.track && r[r.track]));
+  return Array.isArray(items) ? items : [];
+}

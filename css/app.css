@@ -249,3 +249,52 @@ textarea {
 .spin { display: inline-block; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* — Schémas : structure exonique et zoom sur la jonction —
+   Aucune couleur dans le SVG lui-même (js/schema.js) : tout est ici, pour que les
+   deux thèmes soient traités au même endroit que le reste de l'interface. */
+
+.sch-wrap { margin-bottom: 4px; }
+.sch {
+  display: block;
+  width: 100%;
+  /* Un SVG réduit à la largeur d'un téléphone rendrait ses étiquettes illisibles :
+     passé ce seuil, c'est le conteneur .table-wrap qui défile. */
+  min-width: 680px;
+  height: auto;
+}
+
+.sch-intron { stroke: var(--line); stroke-width: 2; }
+.sch-base { stroke: var(--muted); stroke-width: 0.8; opacity: 0.5; }
+
+.sch-exon { fill: var(--line); stroke: none; }
+.sch-exon.cds { fill: var(--muted); }
+.sch-exon.hit { fill: var(--accent); opacity: 0.35; }
+.sch-exon.cds.hit { fill: var(--accent); opacity: 1; }
+
+.sch-junction { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; }
+.sch-junction-label { fill: var(--muted); font-size: 12px; }
+
+.sch-var { fill: var(--del); stroke: none; }
+.sch-mark { stroke: var(--del); stroke-width: 1.6; }
+.sch-mark-head { fill: var(--del); }
+
+.sch-num { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sch-end { fill: var(--muted); font-size: 12px; }
+.sch-pin { fill: var(--del); font-size: 13px; font-weight: 600; }
+
+.sch-dim { stroke: var(--muted); stroke-width: 1; }
+.sch-dim.edge { stroke: var(--del); }
+.sch-dim-label { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sch-dim-label.edge { fill: var(--del); font-weight: 600; }
+
+/* Bordure exonique, site canonique : un constat à signaler, pas une valeur neutre. */
+.badge.alert { color: var(--del); border-color: currentColor; }
+
+/* Avertissement de structure (désaccord de numérotation, version de transcrit) :
+   il doit se lire avant le schéma qu'il relativise. */
+.warn-note { color: var(--warn); margin-bottom: 8px; }
+
+/* La jonction touchée ou frôlée : c'est le trait que le schéma doit faire ressortir. */
+.sch-junction.edge { stroke: var(--del); opacity: 1; stroke-dasharray: none; }
+.sch-junction-label.edge { fill: var(--del); font-weight: 600; }

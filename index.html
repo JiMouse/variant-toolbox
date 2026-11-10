@@ -21,6 +21,7 @@
 <link rel="dns-prefetch" href="https://wintervar.wglab.org">
 <link rel="dns-prefetch" href="https://spliceai-38-xwkwwwxdwq-uc.a.run.app">
 <link rel="dns-prefetch" href="https://rest.variantvalidator.org">
+<link rel="dns-prefetch" href="https://api.genome.ucsc.edu">
 </head>
 <body>
 <header class="topbar">
@@ -95,6 +96,15 @@
         <div id="links" class="links"></div>
       </section>
     </div>
+
+    <!-- Sous l'identité : où tombe la variation dans la structure exonique, et à
+         combien de paires de bases de la jonction la plus proche. Ni la conséquence
+         rendue par VEP ni « exon 5/11 » ne répondent à cette question — « faux-sens »
+         ne dit pas si le nucléotide touché est le dernier de son exon. -->
+    <section class="panel">
+      <h2 data-i18n="structure"></h2>
+      <div id="structure"></div>
+    </section>
 
     <div class="grid">
       <section class="panel">

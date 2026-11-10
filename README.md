@@ -58,6 +58,7 @@ retombe silencieusement sur Monarch.
 | InterVar + critères ACMG | API wInterVar |
 | UniProt, HGNC, MIM du gène, NCBI GeneID | genenames.org (HGNC), repli mygene.info + E-utilities |
 | Phénotypes, MIM, transmission | OMIM (avec clé) ou Monarch |
+| Structure exonique du transcrit (bornes des exons, CDS, brin) | API UCSC, piste `ncbiRefSeq` (hg38) |
 
 Le détail des tests CORS — et la liste de ce qui reste en **lien seul** — est dans
 [docs/cors.md](docs/cors.md). En résumé : seuls **CADD**, **OMIM** et **Orphanet**
@@ -118,6 +119,62 @@ mygene.info + E-utilities qui coûtait 1,4 s. La page ouvre aussi ses connexions
 Ceux de la macro : CADD > 15, REVEL > 0,5, SpliceAI > 0,5, GERP ≥ 2 = conservé,
 AlphaMissense `B` = toléré, SIFT/PolyPhen-2/MetaLR `T`/`B` = toléré et `D`/`P`/`A` = délétère.
 Vert = toléré, rouge = délétère.
+
+## Structure exonique : la variation est-elle en bordure ?
+
+Sous l'identité du variant, un panneau **Structure exonique** répond à une question que
+ni la conséquence rendue par VEP ni « exon 5/11 » ne tranchent : **à combien de paires
+de bases la variation est-elle de la jonction la plus proche ?** « Faux-sens » ne dit
+pas si le nucléotide touché est le dernier de son exon, et TP53 `c.375G>A` — dernière
+base de l'exon 4, donc sur le site donneur — est annoté `synonymous_variant` par VEP.
+
+Le panneau donne d'abord les chiffres :
+
+| | |
+|---|---|
+| Position | exon 4/11 — 279 pb, base 279 de l'exon |
+| Site accepteur (5′) | 278 pb |
+| Site donneur (3′) | **0 pb** |
+| Bordure exonique | **oui — sur la base de bordure elle-même, côté donneur** |
+
+puis deux schémas. Le premier situe la variation **dans le transcrit entier** : exons en
+boîtes, parts traduites en plein et UTR en demi-hauteur, introns en trait. Le second
+**zoome sur la jonction la plus proche**, à l'échelle de la paire de bases, avec une
+graduation à la base sous les fenêtres courtes et la distance cotée de la variation à
+chaque jonction visible.
+
+**Seuils employés** — ceux des définitions existantes, pas des seuils maison :
+*bordure exonique* = les 3 premières ou 3 dernières bases de l'exon, qui est la
+définition de `splice_region_variant` chez VEP ; *site canonique* = ±1 et ±2 dans
+l'intron ; *région d'épissage intronique* = jusqu'à +8/−8. Entre la 4e et la 10e base de
+l'exon, le panneau dit « non, mais proche ».
+
+**Échelles.** Dans la vue du transcrit, les longueurs d'exons sont **compressées en
+racine carrée** et les introns sont **hors échelle** : à l'échelle linéaire, le dernier
+exon de TP53 (1 270 pb avec son 3'UTR) prend la moitié du schéma et l'exon 3 (22 pb)
+disparaît. Seule la position de la variation *à l'intérieur de son exon* y reste
+proportionnelle. Le zoom, lui, est à l'échelle de la base, sans rupture : ce que l'œil y
+mesure est la distance réelle. Les deux schémas sont dessinés **dans le sens du
+transcrit** — la gauche est le 5', y compris sur un gène du brin −, où les coordonnées
+génomiques décroissent.
+
+**Source.** La structure vient de l'API UCSC (piste `ncbiRefSeq`, `Access-Control-Allow-Origin: *`),
+interrogée sur **une seule base** : l'API renvoie tout enregistrement qui *chevauche*
+l'intervalle, donc le transcrit entier dès lors que la variation tombe dedans.
+Mesuré à 13 KiB et ~0,7 s (1,6 KiB sur CFTR, 16 KiB sur DMD). Elle remplace l'appel
+`gene2transcripts` de VariantValidator — **203 KiB en 1,5 à 3,4 s** — qui ne servait
+qu'à obtenir le total d'exons du repli ; `gene2transcripts_v2`, plus léger, ne renvoie
+jamais `genomic_spans` et ne pouvait pas servir ici. VariantValidator reste le repli
+pour ce seul total si UCSC ne connaît pas le transcrit.
+
+Le **commentaire n'attend pas** cette source : elle n'alimente aucune de ses phrases —
+sauf précisément dans le cas où elle porte le total d'exons manquant (« exon 5 » →
+« exon 5/11 »), et c'est alors le seul cas où le commentaire la retient.
+
+UCSC ne sert que la **version courante** de chaque transcrit : une saisie sur
+`NM_000546.5` affiche la structure de `NM_000546.6` et le panneau le signale, car les
+bornes d'exons peuvent avoir changé. Un désaccord entre le numéro d'exon calculé ici et
+celui de la normalisation est également affiché plutôt que tu.
 
 ## Écarts avec la macro
 
@@ -212,14 +269,19 @@ reste « discordants » (MTHFR `c.665C>T`).
 ## Vérification
 
 ```bash
-node tools/test-comment.mjs                                     # 46 contrôles, sans réseau
+node tools/test-comment.mjs                                     # commentaire, sans réseau
+node tools/test-structure.mjs                                   # géométrie exonique, sans réseau
 node tools/validate.mjs "chr17-7675088-C-T:5"
 node tools/validate.mjs --lang en --links "NM_000546.6:c.524G>A:4"
 node tools/validate.mjs --gnomad v2.1.1 "chr17-7675088-C-T:5"   # comme la macro
 ```
 
 `tools/test-comment.mjs` exerce les dix sections du commentaire en FR et EN sans
-appel réseau. Les passages sur variants réels sont dans
+appel réseau. `tools/test-structure.mjs` vérifie la géométrie exonique sur des
+enregistrements UCSC réels des deux brins : numérotation, distances aux jonctions
+(recoupées avec les décalages de la nomenclature HGVS), indels dont la base d'ancrage
+n'est pas touchée, variation à cheval sur une jonction, et décalage de version du
+transcrit. Les passages sur variants réels sont dans
 [docs/validation.md](docs/validation.md), et la comparaison avant/après l'optimisation
 de latence dans [docs/latence.md](docs/latence.md) § 5.
 
@@ -237,10 +299,13 @@ js/variant.js       saisie → variant normalisé (VEP)
 js/annotate.js      chiffres et seuils
 js/comment.js       commentaire FR/EN
 js/links.js         liens
+js/structure.js     structure exonique et distance aux jonctions
+js/schema.js        les deux schémas SVG
 js/i18n.js          libellés de l'interface
 js/app.js           câblage
 tools/validate.mjs  chaîne complète en ligne de commande
 tools/test-comment.mjs  tests du commentaire, sans réseau
+tools/test-structure.mjs  tests de la géométrie exonique, sans réseau
 docs/cors.md        tests CORS
 docs/ensembl.md     choix de l'endpoint VEP et solutions de repli
 docs/validation.md  vérifications

@@ -4,6 +4,8 @@ import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
 import { buildComment } from './comment.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
+import { geneSchema, zoomSchema } from './schema.js';
+import { intronBounds } from './structure.js';
 import { UI, t, initialLang } from './i18n.js';
 import { NA, decimal, isNum, round } from './util.js';
 
@@ -141,7 +143,7 @@ function renderIdentity() {
     [t(lang, 'location'), v.loc
       ? `${t(lang, v.loc)} ${v.locNum}`
         + (v.locField && v.locField !== v.locNum ? ` (${v.locField})`
-          : (isPending('exons') ? ` (${waitText()})` : ''))
+          : (isPending('struct') ? ` (${waitText()})` : ''))
       : null],
     [t(lang, 'hgvsc'), v.hgvsc, 'mono'],
     [t(lang, 'hgvsp'), v.hgvsp, 'mono'],
@@ -267,6 +269,141 @@ function renderPhenotypes() {
   box.append(src, ul);
 }
 
+/* ---------- structure exonique ---------- */
+
+/**
+ * Où tombe la variation dans la structure du gène, et à combien de paires de bases
+ * de la jonction la plus proche.
+ *
+ * La conséquence rendue par VEP ne répond pas à cette question : « faux-sens » ne dit
+ * pas si le nucléotide touché est le dernier de son exon, et « exon 5/11 » ne dit pas
+ * où dans l'exon. Les chiffres sont donc écrits avant les schémas — ce sont eux la
+ * réponse, le dessin ne fait que la rendre lisible d'un coup d'œil.
+ */
+function renderStructure() {
+  const box = $('structure');
+  box.textContent = '';
+  const s = ctx.structure;
+
+  // Rien à dessiner : soit la source est encore en vol, soit UCSC ne connaît pas ce
+  // transcrit. Le panneau le dit plutôt que de disparaître — un panneau absent
+  // laisserait croire que la question de la bordure ne se pose pas.
+  if (!s || !s.structure || !s.location) {
+    const waiting = isPending('struct');
+    const p = document.createElement('p');
+    p.className = waiting ? 'help pending' : 'help';
+    p.textContent = t(lang, waiting ? 'structPending' : 'structNone');
+    box.append(p);
+    return;
+  }
+
+  const st = s.structure;
+  const loc = s.location;
+  const site = (k) => t(lang, k === 'donor' ? 'siteDonor' : 'siteAcceptor');
+  const bp = (n) => t(lang, 'bpShort', { n: decimal(String(n), lang) });
+
+  // Les avertissements d'abord : ils disent de quoi parle le schéma.
+  for (const [cond, key, vars] of [
+    [s.mismatch, 'structMismatch', s.mismatch || {}],
+    [s.versionMismatch, 'structVersion', { tx: s.versionMismatch }],
+  ]) {
+    if (!cond) continue;
+    const p = document.createElement('p');
+    p.className = 'help warn-note';
+    p.textContent = t(lang, key, vars);
+    box.append(p);
+  }
+
+  const rows = [];
+  let edgeLabel = null;
+  let edgeText = '';
+  let edgeKind = '';
+
+  if (loc.kind === 'exon') {
+    rows.push([t(lang, 'structPos'), t(lang, 'structPosExon', {
+      n: loc.exon, total: st.total, len: decimal(String(loc.exonLength), lang), i: loc.offsetInExon,
+    })]);
+    rows.push([t(lang, 'structAcceptor'),
+      loc.dist5 === null ? t(lang, 'structFirstExon') : bp(loc.dist5),
+      loc.dist5 !== null && loc.dist5 < 3 ? 'del' : null]);
+    rows.push([t(lang, 'structDonor'),
+      loc.dist3 === null ? t(lang, 'structLastExon') : bp(loc.dist3),
+      loc.dist3 !== null && loc.dist3 < 3 ? 'del' : null]);
+    edgeLabel = t(lang, 'structEdge');
+    if (!loc.nearest) edgeText = t(lang, 'edgeExonOnly');
+    else {
+      const vars = { n: decimal(String(loc.nearest.dist), lang), site: site(loc.nearest.side) };
+      // « à 0 pb du site donneur » se lit mal pour ce qui est le cas le plus net :
+      // la variation est posée sur la base de bordure.
+      const key = loc.edge !== 'edge' ? (loc.edge === 'near' ? 'edgeExonNear' : 'edgeExonInside')
+        : (loc.nearest.dist === 0 ? 'edgeExonOn' : 'edgeExonEdge');
+      edgeText = t(lang, key, vars);
+      edgeKind = loc.edge === 'edge' ? 'alert' : (loc.edge === 'near' ? 'no' : '');
+    }
+  } else if (loc.kind === 'intron') {
+    const b = intronBounds(st, loc.intron);
+    rows.push([t(lang, 'structPos'), t(lang, 'structPosIntron', {
+      n: loc.intron, total: st.total - 1,
+      len: decimal(String(b ? b.end - b.start + 1 : 0), lang),
+    })]);
+    rows.push([t(lang, 'structDonor'), `+${decimal(String(loc.offsetDonor), lang)}`,
+      loc.offsetDonor <= 2 ? 'del' : null]);
+    rows.push([t(lang, 'structAcceptor'), `−${decimal(String(loc.offsetAcceptor), lang)}`,
+      loc.offsetAcceptor <= 2 ? 'del' : null]);
+    edgeLabel = t(lang, 'structSpliceSite');
+    const vars = {
+      n: decimal(String(loc.nearest.offset), lang),
+      site: site(loc.nearest.side),
+      sign: loc.nearest.side === 'donor' ? '+' : '−',
+    };
+    edgeText = t(lang, loc.edge === 'canonical' ? 'edgeIntronCanonical'
+      : (loc.edge === 'splice' ? 'edgeIntronSplice' : 'edgeIntronDeep'), vars);
+    edgeKind = loc.edge === 'canonical' ? 'alert' : (loc.edge === 'splice' ? 'no' : '');
+  } else if (loc.kind === 'junction') {
+    rows.push([t(lang, 'structPos'), t(lang, 'structPosJunction', {
+      n: loc.exon, total: st.total,
+    })]);
+    edgeLabel = t(lang, 'structEdge');
+    edgeText = t(lang, 'edgeJunctionOn');
+    edgeKind = 'alert';
+  } else {
+    rows.push([t(lang, 'structPos'), t(lang, 'structOutside')]);
+  }
+
+  if (edgeLabel) {
+    const node = document.createElement('span');
+    node.append(badge(edgeText, edgeKind));
+    rows.push([edgeLabel, node]);
+  }
+
+  const dl = document.createElement('dl');
+  dl.className = 'kv';
+  kv(dl, rows);
+  box.append(dl);
+
+  // Les deux schémas, chacun dans un conteneur qui défile : sur un écran étroit, un
+  // SVG mis à l'échelle de la largeur rendrait ses étiquettes illisibles.
+  const figure = (titleKey, node) => {
+    const h = document.createElement('h3');
+    h.textContent = t(lang, titleKey);
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap sch-wrap';
+    wrap.append(node);
+    box.append(h, wrap);
+  };
+  figure('schemaGene', geneSchema(st, loc, { lang }));
+  if (loc.kind === 'exon' || loc.kind === 'intron' || loc.kind === 'junction') {
+    figure('schemaZoom', zoomSchema(st, loc, { lang }));
+  }
+
+  for (const key of ['schemaScaleNote', 'structHelp']) {
+    const p = document.createElement('p');
+    p.className = 'help';
+    p.textContent = t(lang, key);
+    box.append(p);
+  }
+}
+
 function renderLinks() {
   const box = $('links');
   box.textContent = '';
@@ -315,11 +452,11 @@ function currentClass() {
 /** Nom lisible des sources, pour dire ce qui manque encore. */
 const SOURCE_LABELS = {
   mv: 'MyVariant', g4: 'gnomAD', splice: 'SpliceAI', iv: 'InterVar',
-  gene: 'genenames', phenotypes: 'Monarch', exons: 'VariantValidator', mobi: 'MobiDetails',
+  gene: 'genenames', phenotypes: 'Monarch', struct: 'UCSC', mobi: 'MobiDetails',
 };
 
-function pendingLabels() {
-  return (ctx.pending || []).map((k) => SOURCE_LABELS[k] || k).join(', ');
+function pendingLabels(keys = ctx.pending) {
+  return (keys || []).map((k) => SOURCE_LABELS[k] || k).join(', ');
 }
 
 /**
@@ -331,9 +468,12 @@ function pendingLabels() {
  * désactivé jusqu'à ce que tout soit arrivé.
  */
 function renderComment() {
-  const waiting = Boolean(ctx.pending && ctx.pending.length);
+  // `pendingComment` et non `pending` : la structure exonique n'est que dessinée, et
+  // la faire attendre retarderait le commentaire sans changer un mot de son texte
+  // (voir assemble, dans js/annotate.js).
+  const waiting = Boolean(ctx.pendingComment && ctx.pendingComment.length);
   $('comment').value = waiting
-    ? t(lang, 'commentPending', { src: pendingLabels() })
+    ? t(lang, 'commentPending', { src: pendingLabels(ctx.pendingComment) })
     : buildComment(ctx, {
       lang,
       variantClass: currentClass(),
@@ -346,6 +486,7 @@ function renderComment() {
 
 function render() {
   renderIdentity();
+  renderStructure();
   renderNumbers();
   renderPredictions();
   renderPhenotypes();
@@ -368,7 +509,7 @@ function render() {
 function clearResults() {
   ctx = null;
   $('results').hidden = true;
-  ['identity', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'phenotypes', 'links']
+  ['identity', 'structure', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'phenotypes', 'links']
     .forEach((id) => { $(id).textContent = ''; });
   $('comment').value = '';
   $('comment').classList.remove('awaiting');
@@ -539,6 +680,7 @@ const WARM_ORIGINS = [
   'https://api.monarchinitiative.org',
   'https://gnomad.broadinstitute.org',
   'https://wintervar.wglab.org',
+  'https://api.genome.ucsc.edu',
 ];
 let warmed = false;
 

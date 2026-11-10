@@ -14,6 +14,7 @@ Test effectué le 09/11/2026 depuis l'origine `https://jimouse.github.io`
 | NCBI E-utilities | `eutils.ncbi.nlm.nih.gov/entrez/eutils/` | `*` | ✅ **chiffres** |
 | Monarch Initiative | `api.monarchinitiative.org/v3/api/` | `*` | ✅ **chiffres** (source libre phénotypes) |
 | MobiDetails | `mobidetails.chu-montpellier.fr/api/` | reflète l'origine | ✅ **chiffres** (avec clé) |
+| UCSC (API REST) | `api.genome.ucsc.edu/getData/{track,sequence}` | `*` | ✅ **chiffres** (structure exonique, séquence de référence) |
 | CADD | `cadd.gs.washington.edu/api/v1.0/GRCh38-v1.6/` | *aucun* | ❌ **lien seul** → CADD phred lu dans MyVariant |
 | OMIM | `api.omim.org/api/entry` | *aucun* | ❌ **lien seul** → repli Monarch |
 | Orphanet | `api.orphacode.org` | reflète l'origine, mais 401 | ❌ **lien seul** (clé requise) |
@@ -37,3 +38,9 @@ Monarch fournit le nom de la maladie, le numéro MIM (`mappings`) et le mode de 
 
 **Ensembl** renvoie par intermittence des `503 Service Unavailable` sous charge :
 les appels sont réessayés avec un délai croissant.
+
+**UCSC.** Deux usages : `getData/sequence` comme repli de la séquence de référence quand
+Ensembl est en panne, et `getData/track?track=ncbiRefSeq` pour la structure exonique du
+transcrit. La requête de piste porte sur **une seule base** — l'API renvoie tout
+enregistrement qui chevauche l'intervalle, donc le transcrit entier avec ses bornes
+d'exons, son CDS et son brin, dès lors que la variation tombe dedans.
