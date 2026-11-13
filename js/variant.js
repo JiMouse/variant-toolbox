@@ -5,10 +5,10 @@
 // conséquence, exon/intron et les nomenclatures c./p./g.
 
 import {
-  vepHgvs, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
+  vepHgvs, vepEnsembl, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
   variantValidator, variantValidatorTranscript, NC_ACCESSION,
 } from './sources.js';
-import { hedge, errorText } from './util.js';
+import { hedge, errorText, predictedProtein } from './util.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -242,6 +242,75 @@ export function genomicHgvs(item) {
   return myVariantId(item);
 }
 
+/** Partie suivant l'accession : « NM_000546.6:c.524G>A » → « c.524G>A ». */
+export function cPart(hgvs) {
+  if (!hgvs) return null;
+  const s = String(hgvs);
+  return s.includes(':') ? s.split(':').slice(1).join(':') || null : s;
+}
+
+/* ------------------------------------------------------------------ *
+ * Transcrit Ensembl
+ * ------------------------------------------------------------------ */
+
+/**
+ * Le transcrit Ensembl correspondant au transcrit RefSeq retenu, et sa nomenclature c.
+ *
+ * Deux chemins, et le premier couvre la quasi-totalité des cas :
+ *
+ * 1. **Transcrit MANE Select** — VEP a déjà rendu l'ENST apparié dans `mane_select`,
+ *    et la numérotation c. est la même des deux côtés : c'est la définition même de
+ *    MANE Select (même intervalle génomique, même CDS, mêmes UTR, à la base près).
+ *    Rien à demander, la ligne s'affiche aussitôt que l'identité.
+ * 2. **Transcrit non-MANE ou repli VariantValidator** — un second appel à VEP, sur le
+ *    cache Ensembl cette fois, car VEP sert l'un **ou** l'autre jeu de transcrits.
+ *    L'ENST retenu est, dans l'ordre : celui que VEP apparie lui-même au transcrit
+ *    saisi, puis celui dont la numérotation c. est **identique** (même CDS, donc une
+ *    nomenclature qui se lit comme l'autre), puis le MANE Select, puis le canonique.
+ *    Les deux derniers décrivent un **autre** transcrit : l'interface le dit, et la
+ *    nomenclature rendue porte de toute façon sa propre accession ENST.
+ *
+ * Renvoie `null` plutôt que d'échouer : cette ligne n'entre dans aucun chiffre et dans
+ * aucune phrase du commentaire.
+ */
+export async function ensemblTranscript(variant) {
+  const c = cPart(variant.hgvsc);
+  if (variant.ensemblTranscript) {
+    return {
+      transcript: variant.ensemblTranscript,
+      hgvsc: c ? `${variant.ensemblTranscript}:${c}` : null,
+      matched: 'mane',
+    };
+  }
+
+  const g = variant.ref && variant.alt
+    ? genomicHgvsFromVcf(variant.chr, variant.pos, variant.ref, variant.alt)
+    : (variant.genomicHgvs ? String(variant.genomicHgvs).replace(/^chr/, '') : null);
+  if (!g) return null;
+
+  const vep = await vepEnsembl(g);
+  const item = Array.isArray(vep) ? vep[0] : vep;
+  const pool = ((item && item.transcript_consequences) || [])
+    .filter((t) => /^ENST/.test(t.transcript_id || '') && t.hgvsc);
+  if (!pool.length) return null;
+
+  const acc = variant.transcript ? String(variant.transcript).split('.')[0] : null;
+  // Sur le cache Ensembl, `mane_select` porte l'accession **RefSeq** : la réciproque
+  // exacte de ce que rend le cache RefSeq.
+  const paired = acc && pool.find((t) => String(t.mane_select || '').split('.')[0] === acc);
+  const sameC = c && pool.find((t) => cPart(t.hgvsc) === c);
+  const other = pool.find((t) => t.mane_select) || pool.find((t) => t.canonical) || pool[0];
+  const tc = paired || sameC || other;
+  if (!tc) return null;
+
+  return {
+    // `hgvsc` porte l'ENST **versionné**, là où `transcript_id` ne l'est pas.
+    transcript: String(tc.hgvsc).split(':')[0] || tc.transcript_id,
+    hgvsc: tc.hgvsc,
+    matched: paired ? 'paired' : (sameC ? 'sameC' : 'other'),
+  };
+}
+
 /**
  * Délai avant de lancer VariantValidator en parallèle de VEP.
  *
@@ -374,6 +443,13 @@ export async function normalize(input, { onProgress = null } = {}) {
     && /^NM_/.test(t.transcript_id || ''));
   const varType = mapConsequence(tc.consequence_terms || []);
 
+  // VEP écrit la conséquence protéique sans parenthèses ; elle est pourtant déduite,
+  // jamais observée (voir predictedProtein).
+  const hgvsp = predictedProtein(tc.hgvsp || null);
+  // En mode RefSeq, `mane_select` porte l'**ENST** apparié au transcrit RefSeq choisi :
+  // le transcrit Ensembl est donc déjà connu, sans second appel (voir ensemblTranscript).
+  const ensembl = /^ENST\d/.test(String(tc.mane_select || '')) ? String(tc.mane_select) : null;
+
   const exonField = tc.exon || null;   // « 5/11 »
   const intronField = tc.intron || null;
   const loc = exonField ? 'exon' : (intronField ? 'intron' : null);
@@ -405,8 +481,9 @@ export async function normalize(input, { onProgress = null } = {}) {
     locNum: locField ? locField.split('/')[0] : null,
     locField,
     hgvsc: tc.hgvsc || null,
-    hgvsp: tc.hgvsp || null,
-    proteinChange: tc.hgvsp ? tc.hgvsp.split(':')[1] || null : null,
+    hgvsp,
+    proteinChange: cPart(hgvsp),
+    ensemblTranscript: ensembl,
     aminoAcids: tc.amino_acids || null,
     domains: tc.domains || [],
     rsid: item.id && /^rs\d+$/.test(item.id) ? item.id : null,
@@ -511,8 +588,11 @@ export async function normalizeViaVariantValidator(parsed) {
   const hgvspRaw = (v.hgvs_predicted_protein_consequence || {}).tlr || null;
   // VariantValidator écrit les conséquences protéiques entre parenthèses (prédites),
   // et « p.? » quand l'effet protéique est indéterminé (épissage, intronique).
+  // La forme nue sert à `inferConsequence`, dont les motifs lisent le changement
+  // lui-même ; la forme rendue est reparenthésée comme celle de VEP.
   const hgvspClean = hgvspRaw ? hgvspRaw.replace(/\((.*)\)/, '$1') : null;
   const hgvsp = hgvspClean && !/:p\.\(?\?\)?$/.test(hgvspClean) ? hgvspClean : null;
+  const hgvspOut = predictedProtein(hgvsp);
 
   let vcf = { chr, pos: Number(vcfRaw.pos), ref: vcfRaw.ref, alt: vcfRaw.alt };
   if (vcf.ref && vcf.alt && vcf.ref.length !== vcf.alt.length) {
@@ -564,8 +644,11 @@ export async function normalizeViaVariantValidator(parsed) {
     locField: exonNum ? String(exonNum) : null,
     exonTotalFor: exonNum && transcript ? transcript : null,
     hgvsc,
-    hgvsp,
-    proteinChange: hgvsp ? hgvsp.split(':').slice(1).join(':') || null : null,
+    hgvsp: hgvspOut,
+    proteinChange: cPart(hgvspOut),
+    // Le repli ne donne pas d'équivalent Ensembl : il sera demandé à VEP si Ensembl
+    // est revenu d'ici là (voir ensemblTranscript).
+    ensemblTranscript: null,
     aminoAcids: null,
     domains: [],
     rsid: null,

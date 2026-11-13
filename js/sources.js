@@ -3,7 +3,8 @@
 
 import { fetchJSON, hedge } from './util.js';
 
-const VEP_OPTS = 'refseq=1&hgvs=1&numbers=1&domains=1&mane=1&canonical=1&variant_class=1';
+const VEP_FIELDS = 'hgvs=1&numbers=1&domains=1&mane=1&canonical=1&variant_class=1';
+const VEP_OPTS = `refseq=1&${VEP_FIELDS}`;
 
 /**
  * VEP à partir d'une nomenclature HGVS c. (transcrit RefSeq).
@@ -17,6 +18,34 @@ export function vepHgvs(hgvs, opts = {}) {
   const url = `https://rest.ensembl.org/vep/human/hgvs/${encodeURIComponent(hgvs)}`
     + `?content-type=application/json&${VEP_OPTS}`;
   return fetchJSON(url, { retries: 0, timeout: 8000, ...opts });
+}
+
+/**
+ * VEP sur les transcrits **Ensembl** — le même appel, sans `refseq=1`.
+ *
+ * Deux jeux de transcrits, deux appels : VEP sert soit le cache RefSeq, soit le cache
+ * Ensembl, jamais les deux. Celui-ci n'est demandé que pour le transcrit ENST et sa
+ * nomenclature c., et seulement quand on ne peut pas les déduire (voir
+ * `ensemblTranscript`, js/variant.js) : il ne porte aucun chiffre du compte rendu.
+ *
+ * Trois champs suffisent, et ce sont les seuls lus : `hgvs` pour la nomenclature,
+ * `mane` et `canonical` pour choisir le transcrit.
+ *
+ * 20 s, là où les autres appels à Ensembl s'arrêtent à 8 : le même variant mesuré à
+ * 13,2 s (DMD) et 14,2 s (CFTR) sur cet endpoint, contre quelques dizaines de
+ * millisecondes sur TP53 — un gène à beaucoup de transcrits coûte cher à annoter
+ * entièrement. 8 s coupaient donc systématiquement les gros gènes. Le délai ne
+ * retarde rien de ce qui se lit en premier : le commentaire ne l'attend pas (voir
+ * `pendingComment`, js/annotate.js) et l'encart affiche « … » en attendant.
+ *
+ * `retries: 0` comme `vepHgvs`, et pour la même raison : un Ensembl en difficulté ne
+ * refuse pas, il laisse pendre la connexion. Un échec ici ne coûte qu'une ligne de
+ * l'encart d'identité, jamais l'analyse.
+ */
+export function vepEnsembl(hgvs, opts = {}) {
+  const url = `https://rest.ensembl.org/vep/human/hgvs/${encodeURIComponent(hgvs)}`
+    + '?content-type=application/json&hgvs=1&mane=1&canonical=1';
+  return fetchJSON(url, { retries: 0, timeout: 20000, ...opts });
 }
 
 /**

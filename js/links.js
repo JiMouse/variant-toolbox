@@ -120,6 +120,6 @@ export function buildLinks(ctx, opts = {}) {
 }
 
 export const LINK_GROUPS = {
-  fr: { gene: 'Gène et maladie', variant: 'Variant', pop: 'Populations', pred: 'Prédiction et annotation', lit: 'Littérature' },
+  fr: { gene: 'Gène et maladie', variant: 'Variation', pop: 'Populations', pred: 'Prédiction et annotation', lit: 'Littérature' },
   en: { gene: 'Gene and disease', variant: 'Variant', pop: 'Populations', pred: 'Prediction and annotation', lit: 'Literature' },
 };

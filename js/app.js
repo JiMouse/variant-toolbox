@@ -2,7 +2,7 @@
 
 import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
-import { buildComment } from './comment.js';
+import { buildComment, buildNomenclature } from './comment.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds } from './structure.js';
@@ -33,7 +33,7 @@ function applyLang() {
   });
   $('variantInput').placeholder = t(lang, 'inputPlaceholder');
   $('footNote').textContent = lang === 'fr'
-    ? 'Aucune donnée patient n’est transmise : seules les coordonnées du variant sont envoyées aux services interrogés.'
+    ? 'Aucune donnée patient n’est transmise : seules les coordonnées de la variation sont envoyées aux services interrogés.'
     : 'No patient data leaves the page: only the variant coordinates are sent to the queried services.';
   if (ctx) render();
 }
@@ -85,6 +85,19 @@ function verdictCell(verdict) {
   return { text: t(lang, 'na'), cls: 'na' };
 }
 
+/** Valeur suivie d'une note grise — « autre transcrit : la numérotation c. … ». */
+function withNote(value, note) {
+  const span = document.createElement('span');
+  span.textContent = value;
+  if (note) {
+    const n = document.createElement('span');
+    n.className = 'note';
+    n.textContent = `  ${note}`;
+    span.append(n);
+  }
+  return span;
+}
+
 function badge(text, kind) {
   const s = document.createElement('span');
   s.className = `badge ${kind}`;
@@ -134,9 +147,20 @@ function renderIdentity() {
     n.textContent = ` ${t(lang, 'maneIs', { tx: v.maneTranscript })}`;
     maneBox.append(n);
   }
+  // Le transcrit Ensembl : immédiat sur un transcrit MANE Select, demandé à VEP
+  // sinon. Quand l'ENST retenu n'est l'équivalent d'aucun transcrit RefSeq retenu, sa
+  // nomenclature compte depuis un autre point de départ : l'avertissement est posé sur
+  // la ligne du c., la valeur qu'on recopie.
+  const ens = ctx.ensembl;
+  const ensNote = ens && ens.matched === 'other' ? t(lang, 'ensOther') : null;
+  const ensWait = !ens && isPending('ens');
+
   kv($('identity'), [
     [t(lang, 'gene'), v.gene],
     [t(lang, 'transcript'), v.transcript, 'mono'],
+    [t(lang, 'transcriptEns'), ens
+      ? ens.transcript
+      : (ensWait ? waitText() : NA), ens ? 'mono' : (ensWait ? 'na pending' : 'na')],
     [t(lang, 'mane'), maneBox],
     [t(lang, 'consequence'), (v.consequenceTerms || []).join(', ')],
     // « exon 5 (5/11) » ; tant que le total manque (repli VariantValidator), « exon 5 … ».
@@ -146,12 +170,40 @@ function renderIdentity() {
           : (isPending('struct') ? ` (${waitText()})` : ''))
       : null],
     [t(lang, 'hgvsc'), v.hgvsc, 'mono'],
+    [t(lang, 'hgvscEns'), ens && ens.hgvsc
+      ? withNote(ens.hgvsc, ensNote)
+      : (ensWait ? waitText() : NA), ens && ens.hgvsc ? 'mono' : (ensWait ? 'na pending' : 'na')],
     [t(lang, 'hgvsp'), v.hgvsp, 'mono'],
     [t(lang, 'hgvsg'), `hg38 ${v.genomicHgvs}`, 'mono'],
     [t(lang, 'pseudoVcf'), v.pseudoVcf, 'mono'],
     [t(lang, 'dbsnp'), ctx.rsid, 'mono'],
     [t(lang, 'normSource'), ctx.source && ctx.source !== 'VEP' ? ctx.source : null],
+    // En dernier, la ligne que le compte rendu recopie telle quelle : c'est aussi
+    // la première ligne du commentaire (voir buildNomenclature, js/comment.js).
+    [t(lang, 'nomenclature'), buildNomenclature(v), 'mono'],
   ]);
+  $('copyIdBtn').disabled = false;
+}
+
+/**
+ * Les nomenclatures en clair, pour le presse-papier.
+ *
+ * Chaque ligne porte son libellé : recopiée dans un dossier, une nomenclature doit
+ * dire de quoi elle est la nomenclature — une accession ENST et une accession NM_
+ * se ressemblent assez pour qu'on les confonde une fois sorties de l'écran.
+ */
+function identityText() {
+  const v = ctx.variant;
+  const ens = ctx.ensembl;
+  const sep = lang === 'fr' ? ' : ' : ': ';
+  return [
+    [t(lang, 'nomenclature'), buildNomenclature(v)],
+    [t(lang, 'hgvsc'), v.hgvsc],
+    [t(lang, 'hgvscEns'), ens ? ens.hgvsc : null],
+    [t(lang, 'hgvsp'), v.hgvsp],
+    [t(lang, 'hgvsg'), v.genomicHgvs ? `hg38 ${v.genomicHgvs}` : null],
+    [t(lang, 'pseudoVcf'), v.pseudoVcf],
+  ].filter(([, value]) => value).map(([label, value]) => `${label}${sep}${value}`).join('\n');
 }
 
 function renderNumbers() {
@@ -453,6 +505,7 @@ function currentClass() {
 const SOURCE_LABELS = {
   mv: 'MyVariant', g4: 'gnomAD', splice: 'SpliceAI', iv: 'InterVar',
   gene: 'genenames', phenotypes: 'Monarch', struct: 'UCSC', mobi: 'MobiDetails',
+  ens: 'Ensembl',
 };
 
 function pendingLabels(keys = ctx.pending) {
@@ -513,6 +566,7 @@ function clearResults() {
     .forEach((id) => { $(id).textContent = ''; });
   $('comment').value = '';
   $('comment').classList.remove('awaiting');
+  $('copyIdBtn').disabled = true;
   $('copyBtn').disabled = true;
   $('regenBtn').disabled = true;
 }
@@ -737,16 +791,30 @@ $('gnomadVersion').addEventListener('change', () => {
 $('classGroup').addEventListener('change', () => { if (ctx) renderComment(); });
 $('regenBtn').addEventListener('click', () => { if (ctx) renderComment(); });
 
-$('copyBtn').addEventListener('click', async () => {
-  const text = $('comment').value;
+/**
+ * Copie, avec repli sur `execCommand` : l'API presse-papier demande un contexte
+ * sécurisé, et la page s'ouvre aussi en `file://` pendant les essais.
+ */
+async function copyToClipboard(text, btn) {
   try {
     await navigator.clipboard.writeText(text);
   } catch (e) {
-    $('comment').select();
-    document.execCommand('copy');
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.append(ta);
+    ta.select();
+    try { document.execCommand('copy'); } finally { ta.remove(); }
   }
-  $('copyBtn').textContent = t(lang, 'copied');
-  setTimeout(() => { $('copyBtn').textContent = t(lang, 'copy'); }, 1500);
+  btn.textContent = t(lang, 'copied');
+  setTimeout(() => { btn.textContent = t(lang, 'copy'); }, 1500);
+}
+
+$('copyBtn').addEventListener('click', () => copyToClipboard($('comment').value, $('copyBtn')));
+$('copyIdBtn').addEventListener('click', () => {
+  if (ctx) copyToClipboard(identityText(), $('copyIdBtn'));
 });
 
 /* ---------- démarrage ---------- */

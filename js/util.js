@@ -221,3 +221,27 @@ export function hedge(primary, secondary, { delay = 2500, onSecondary = null } =
     timer = setTimeout(startSecondary, delay);
   });
 }
+
+/**
+ * Conséquence protéique écrite comme une **prédiction** : `p.(Arg175His)`.
+ *
+ * Les parenthèses de la nomenclature HGVS disent « déduit, non observé ». Toute
+ * conséquence protéique rendue ici est déduite de la variation nucléotidique — ni VEP
+ * ni VariantValidator ne lisent la protéine — donc elles s'imposent partout. VEP les
+ * omet, VariantValidator les écrit : la forme est fixée ici, une seule fois, pour que
+ * l'encart d'identité, la nomenclature complète et le commentaire ne divergent pas.
+ *
+ * `p.?` — effet protéique indéterminé — reste nu : il n'y a rien de prédit à mettre
+ * entre parenthèses.
+ */
+export function predictedProtein(hgvsp) {
+  if (!hgvsp) return hgvsp;
+  const s = String(hgvsp);
+  const i = s.indexOf(':');
+  const prefix = i >= 0 ? s.slice(0, i + 1) : '';
+  const m = (i >= 0 ? s.slice(i + 1) : s).trim().match(/^p\.\s*(.+)$/);
+  if (!m) return hgvsp;
+  const change = m[1].trim();
+  if (change === '?' || (change.startsWith('(') && change.endsWith(')'))) return `${prefix}p.${change}`;
+  return `${prefix}p.(${change})`;
+}

@@ -7,7 +7,8 @@
 import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js/comment.js';
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
-import { hedge } from '../js/util.js';
+import { ensemblTranscript } from '../js/variant.js';
+import { hedge, predictedProtein } from '../js/util.js';
 
 let pass = 0;
 let fail = 0;
@@ -38,8 +39,8 @@ function ctx(over = {}) {
       transcript: 'NM_000546.6',
       genomicHgvs: 'chr17:g.7675088C>T',
       hgvsc: 'NM_000546.6:c.524G>A',
-      hgvsp: 'NP_000537.3:p.Arg175His',
-      proteinChange: 'p.Arg175His',
+      hgvsp: 'NP_000537.3:p.(Arg175His)',
+      proteinChange: 'p.(Arg175His)',
       varType: 'missense',
       varTypeNull: false,
       loc: 'exon',
@@ -218,9 +219,28 @@ contains('classe 5 EN', en(ctx(), { variantClass: 5 }),
 /* — 1. Nomenclature et structure — */
 const full = fr(phenoCtx, { variantClass: 5 });
 check('ligne 1 = nomenclature', full.split('\n')[0],
-  'hg38 chr17:g.7675088C>T NM_000546.6(TP53):c.524G>A p.Arg175His');
+  'hg38 chr17:g.7675088C>T NM_000546.6(TP53):c.524G>A p.(Arg175His)');
 check('ligne 2 vide', full.split('\n')[1], '');
 check('pas d\'espace en fin de ligne', /[ \t]+\n|[ \t]+$/.test(full), false);
+
+/* — Parenthèses de la conséquence protéique (prédite, jamais observée) — */
+check('VEP : p. sans parenthèses → p.(…)',
+  predictedProtein('NP_000537.3:p.Arg175His'), 'NP_000537.3:p.(Arg175His)');
+check('VariantValidator : parenthèses déjà posées, pas de doublon',
+  predictedProtein('NP_000537.3:p.(Arg175His)'), 'NP_000537.3:p.(Arg175His)');
+check('frameshift', predictedProtein('p.Arg134LysfsTer5'), 'p.(Arg134LysfsTer5)');
+check('synonyme', predictedProtein('p.Ala123='), 'p.(Ala123=)');
+check('effet indéterminé : p.? reste nu', predictedProtein('p.?'), 'p.?');
+check('rien à parenthéser', predictedProtein(null), null);
+check('ce n\'est pas une conséquence protéique', predictedProtein('c.524G>A'), 'c.524G>A');
+
+/* — Transcrit Ensembl : déduit du transcrit MANE Select, sans appel réseau — */
+const ens = await ensemblTranscript({
+  transcript: 'NM_000546.6', hgvsc: 'NM_000546.6:c.524G>A', ensemblTranscript: 'ENST00000269305.9',
+});
+check('MANE Select : ENST apparié', ens.transcript, 'ENST00000269305.9');
+check('MANE Select : même numérotation c.', ens.hgvsc, 'ENST00000269305.9:c.524G>A');
+check('MANE Select : aucun appel réseau', ens.matched, 'mane');
 
 /* — Libellés : les deux langues doivent couvrir exactement les mêmes clés — */
 // Une clé absente s'affichait telle quelle dans l'interface (« fallbackSource »).

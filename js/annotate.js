@@ -6,7 +6,7 @@ import {
   myVariant, gnomad4, spliceai, intervar, mygene, ncbiGeneId, genenames,
   monarchDiseases, monarchDisease, monarchInheritance, omimGeneMap, mobiDetailsId,
 } from './sources.js';
-import { exonTotal } from './variant.js';
+import { exonTotal, ensemblTranscript } from './variant.js';
 import { fetchStructure } from './structure.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
 
@@ -389,7 +389,10 @@ function assemble(variant, out, errors, pending) {
     source: variant.source || 'VEP',
     degraded: variant.degraded || null,
     pending: [...pending],
-    pendingComment: [...pending].filter((k) => k !== 'struct' || structFeedsComment),
+    // `ens` n'entre jamais dans le commentaire : le transcrit Ensembl et sa
+    // nomenclature c. ne sont affichés que dans l'encart d'identité.
+    pendingComment: [...pending]
+      .filter((k) => k !== 'ens' && (k !== 'struct' || structFeedsComment)),
     complete: pending.size === 0,
     notFoundInMyVariant: Boolean(out.mv && out.mv.__notFound),
     predictions: buildPredictions(mv, out.splice),
@@ -407,6 +410,7 @@ function assemble(variant, out, errors, pending) {
     },
     phenotypes,
     structure: struct,
+    ensembl: out.ens || null,
     mobiDetailsId: out.mobi || null,
     rsid: variant.rsid || (out.g4 && get(out.g4, 'data.variant.rsids') ? first(get(out.g4, 'data.variant.rsids')) : null)
       || first(get(mv, 'dbsnp.rsid')) || null,
@@ -462,6 +466,10 @@ export async function annotate(variant, {
       const n = variant.exonTotalFor ? await exonTotal(variant.exonTotalFor) : null;
       return n ? { structure: null, location: null, total: n } : null;
     },
+    // Transcrit Ensembl et nomenclature c. correspondante. Immédiat sur un transcrit
+    // MANE Select — l'ENST apparié est déjà dans la réponse VEP — et un second appel à
+    // VEP sinon (voir ensemblTranscript, js/variant.js).
+    ens: () => ensemblTranscript(variant),
     mobi: () => (mobiKey && variant.hgvsc ? mobiDetailsId(variant.hgvsc, mobiKey) : Promise.resolve(null)),
   };
 

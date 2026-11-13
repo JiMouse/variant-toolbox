@@ -1,6 +1,6 @@
 # variant-toolbox
 
-Version web de la **ToolBox SNV** de `MacroCES_Web.xlsm` : saisie d'un variant,
+Version web de la **ToolBox SNV** de `MacroCES_Web.xlsm` : saisie d'une variation,
 récupération des chiffres, liens vers les bases, et rédaction du commentaire en
 français ou en anglais.
 
@@ -9,22 +9,25 @@ Page statique, sans étape de build, hébergée sur GitHub Pages.
 
 ## Utilisation
 
-1. Saisir le variant, sous l'une des deux formes :
+1. Saisir la variation, sous l'une des deux formes :
    - HGVS sur transcrit RefSeq — `NM_000546.6:c.524G>A` (le gène entre parenthèses
      est accepté : `NM_000546.6(TP53):c.524G>A`) ;
    - pseudo-VCF hg38 — `chr17-7675088-C-T` (`17:7675088:C:T` fonctionne aussi).
 2. Choisir la classe (3, 4 ou 5).
 3. **Analyser.** Les chiffres, les liens et le commentaire s'affichent ;
-   le bouton **Copier** met le commentaire dans le presse-papier.
+   le bouton **Copier** du commentaire met celui-ci dans le presse-papier, celui de
+   l'encart **Identité de la variation** met les nomenclatures — HGVS c. (RefSeq et
+   Ensembl), p., g., pseudo-VCF, et la nomenclature complète.
 
 Le choix du **transcrit** suit la saisie : une entrée VCF utilise le transcrit
 **MANE Select**, une entrée HGVS utilise le transcrit saisi, avec une indication
-MANE oui/non (et le transcrit MANE rappelé si ce n'est pas celui-là).
+MANE oui/non (et le transcrit MANE rappelé si ce n'est pas celui-là). Le **transcrit
+Ensembl** correspondant et sa nomenclature c. sont affichés à côté (voir plus bas).
 
 **Langue** : détectée depuis le navigateur, bouton FR/EN, choix mémorisé.
 Le commentaire suit la langue de l'interface.
 
-On peut aussi partager un variant par l'URL :
+On peut aussi partager une variation par l'URL :
 `?v=chr17-7675088-C-T&class=5&lang=fr`
 
 ## Clés API
@@ -35,7 +38,7 @@ Saisies dans le panneau **Clés API**, stockées **uniquement dans le navigateur
 | Clé | Avec la clé | Sans la clé |
 |---|---|---|
 | **OMIM** | phénotypes et transmission depuis l'API OMIM | repli sur Monarch (nom, numéro MIM, transmission) |
-| **MobiDetails** | création/lecture de l'identifiant et lien vers la fiche du variant | lien vers la page d'accueil |
+| **MobiDetails** | création/lecture de l'identifiant et lien vers la fiche de la variation | lien vers la page d'accueil |
 
 > ⚠️ La clé MobiDetails est écrite **en dur** dans `ToolBox.GetMobiId` (VBA).
 > Elle n'est pas reprise ici, et le classeur `.xlsm` est exclu par `.gitignore`.
@@ -50,6 +53,7 @@ retombe silencieusement sur Monarch.
 | Donnée | Source |
 |---|---|
 | Gène, transcrit, conséquence, exon/intron, HGVS c./p./g., MANE | Ensembl VEP REST (`refseq=1`) |
+| Transcrit Ensembl et nomenclature c. correspondante | apparié par VEP (`mane_select`), ou Ensembl VEP REST sur le cache Ensembl |
 | gnomAD v4.1 exomes + génomes (AC, htz, hmz, AF) | API GraphQL gnomAD |
 | gnomAD v2.1.1 exomes | MyVariant.info (`gnomad_exome`) |
 | SIFT, PolyPhen-2, AlphaMissense, REVEL, MetaLR, CADD, GERP++, phyloP, phastCons, InterPro | MyVariant.info (`dbnsfp`) |
@@ -79,7 +83,7 @@ VariantValidator en maintenance — aucune analyse n'est possible : sans gène n
 coordonnées, aucune base n'est interrogeable. L'interface le dit alors explicitement,
 avec le détail par service, et distingue deux cas qu'il ne faut pas confondre : les
 services sont **tombés** (délai, 503) et il faut réessayer plus tard, ou l'un d'eux a
-**répondu en refusant** le variant (base de référence qui ne correspond pas, transcrit
+**répondu en refusant** la variation (base de référence qui ne correspond pas, transcrit
 inconnu) et c'est la saisie qu'il faut corriger. Un refus l'emporte sur une panne : il
 renseigne, là où réessayer ne changerait rien. Le repli est borné à 12 s, car la page
 « 503 » de VariantValidator met elle-même 15 s à arriver et la réessayer portait la
@@ -92,18 +96,19 @@ panne à 31 s.
 | VEP répond (cas normal, ~39 ms) | **380–620 ms** |
 | Ensembl **en panne**, repli VariantValidator | **801 ms** de médiane, 16 analyses sur 24 sous la seconde |
 
-L'affichage est **progressif** : l'identité du variant (gène, transcrit, MANE,
+L'affichage est **progressif** : l'identité de la variation (gène, transcrit, MANE,
 conséquence, HGVS, exon) apparaît dès la normalisation, puis chaque bloc se remplit à
 mesure que les sources répondent. Une valeur encore en vol s'affiche « … » et non
-« n.a. » — en clinique, « n.a. » affirme que la base a répondu sans connaître le variant.
+« n.a. » — en clinique, « n.a. » affirme que la base a répondu sans connaître la variation.
 Le **commentaire n'est pas rédigé tant qu'une source manque**, et les boutons Copier et
 Régénérer restent désactivés : un commentaire partiel annoncerait des absences non
 vérifiées.
 
 Chaque nouvelle analyse **efface l'écran** avant de commencer — y compris quand la
-saisie est refusée d'emblée. Les panneaux du variant précédent ne restent donc jamais
-affichés pendant la normalisation du suivant, et son commentaire n'est plus copiable :
-l'écran ne doit jamais montrer les chiffres d'un variant sous l'identité d'un autre.
+saisie est refusée d'emblée. Les panneaux de la variation précédente ne restent donc
+jamais affichés pendant la normalisation de la suivante, et son commentaire n'est plus
+copiable : l'écran ne doit jamais montrer les chiffres d'une variation sous l'identité
+d'une autre.
 
 Profil détaillé, latence mesurée de chaque service et les huit corrections qui ont fait
 passer l'analyse de 7,8–8,9 s à moins d'une seconde : [docs/latence.md](docs/latence.md).
@@ -114,6 +119,33 @@ au lieu de les suivre, et `genenames.org` remplace en un appel de 38 ms la paire
 mygene.info + E-utilities qui coûtait 1,4 s. La page ouvre aussi ses connexions TLS
 **pendant la saisie** (`warmUp`) : la seule poignée de main de MyVariant coûte 1,3 s.
 
+## Nomenclatures
+
+L'encart **Identité de la variation** porte les cinq nomenclatures, et finit par la
+**nomenclature complète** — la même ligne, mot pour mot, que la première ligne du
+commentaire : `hg38 chr17:g.7675088C>T NM_000546.6(TP53):c.524G>A p.(Arg175His)`.
+Le bouton **Copier** de l'encart les met toutes dans le presse-papier, chacune
+précédée de son libellé.
+
+**Transcrit Ensembl.** Le transcrit RefSeq retenu est doublé de son équivalent
+Ensembl et de la nomenclature c. correspondante. Sur un transcrit **MANE Select** —
+la quasi-totalité des cas — rien n'est demandé au réseau : VEP rend déjà l'ENST
+apparié dans `mane_select`, et la numérotation c. est la même des deux côtés, par
+définition de MANE Select (même intervalle génomique, même CDS, mêmes UTR). Sinon un
+second appel à VEP est fait, sur le **cache Ensembl** cette fois — VEP sert l'un ou
+l'autre jeu de transcrits, jamais les deux. L'ENST retenu est, dans l'ordre : celui
+que VEP apparie lui-même au transcrit saisi, celui dont la numérotation c. est
+identique (même CDS), puis le MANE Select ou le canonique — ces deux derniers
+décrivant un **autre** transcrit, ce que la ligne signale. Cet appel n'entre dans
+aucun chiffre et dans aucune phrase du commentaire, qui ne l'attend donc pas.
+
+**Parenthèses du `p.`** — la conséquence protéique s'écrit `p.(Arg175His)` et non
+`p.Arg175His` : en nomenclature HGVS, les parenthèses disent « déduit, non observé ».
+Elle l'est toujours ici, ni VEP ni VariantValidator ne lisant la protéine. VEP les
+omet, VariantValidator les écrit : la forme est posée en un seul endroit
+(`predictedProtein`, `js/util.js`), pour que l'encart, la nomenclature complète et le
+commentaire ne divergent pas. `p.?` — effet protéique indéterminé — reste nu.
+
 ## Seuils
 
 Ceux de la macro : CADD > 15, REVEL > 0,5, SpliceAI > 0,5, GERP ≥ 2 = conservé,
@@ -122,7 +154,7 @@ Vert = toléré, rouge = délétère.
 
 ## Structure exonique : la variation est-elle en bordure ?
 
-Sous l'identité du variant, un panneau **Structure exonique** répond à une question que
+Sous l'identité de la variation, un panneau **Structure exonique** répond à une question que
 ni la conséquence rendue par VEP ni « exon 5/11 » ne tranchent : **à combien de paires
 de bases la variation est-elle de la jonction la plus proche ?** « Faux-sens » ne dit
 pas si le nucléotide touché est le dernier de son exon, et TP53 `c.375G>A` — dernière
@@ -206,6 +238,11 @@ Ici, la phrase n'est écrite que si **faux-sens ET GERP conservé ET phyloP > 4*
 - **HGVS génomique** — la macro écrivait `g.{pos}{ref}>{alt}`, ce qui donne
   `g.117559589CATCT>C` pour un indel. La notation HGVS correcte est utilisée ici
   (`g.117559592_117559594del`).
+- **Parenthèses du `p.`** — la nomenclature du compte rendu écrit `p.(Arg175His)`,
+  là où la macro reprenait le `p.Arg175His` de sa source. Les parenthèses HGVS
+  disent « déduit, non observé », ce qu'est toute conséquence protéique calculée à
+  partir d'une variation nucléotidique. La première ligne du commentaire diffère donc
+  de celle de la macro par ces deux caractères.
 - **Liste de prédictions vide** — la macro pouvait écrire « discordants (délétère :  ;
   toléré : SpliceAI) ». Une liste vide n'est plus écrite. **Le verdict lui-même n'a pas
   été touché.**
@@ -229,7 +266,7 @@ Trois changements dans `predictionVerdict()` (`js/comment.js`) :
 
 1. **`concordant_del`** exigeait que **REVEL ou MetaLR** soit délétère. Ces deux
    méta-prédicteurs ne notent que les faux-sens : pour un non-sens, un frameshift ou un
-   variant d'épissage ils valent toujours `n.a.`, et le verdict retombait donc
+   variation d'épissage ils valent toujours `n.a.`, et le verdict retombait donc
    **systématiquement sur « discordants »**, même avec CADD et SpliceAI tous deux
    délétères. La concordance n'est maintenant exigée que si au moins un des deux est
    réellement disponible. BRCA1 `c.5467+1G>A` (SpliceAI 0,93 ; CADD 32) passe ainsi de
@@ -281,7 +318,7 @@ appel réseau. `tools/test-structure.mjs` vérifie la géométrie exonique sur d
 enregistrements UCSC réels des deux brins : numérotation, distances aux jonctions
 (recoupées avec les décalages de la nomenclature HGVS), indels dont la base d'ancrage
 n'est pas touchée, variation à cheval sur une jonction, et décalage de version du
-transcrit. Les passages sur variants réels sont dans
+transcrit. Les passages sur variations réelles sont dans
 [docs/validation.md](docs/validation.md), et la comparaison avant/après l'optimisation
 de latence dans [docs/latence.md](docs/latence.md) § 5.
 
@@ -295,7 +332,7 @@ index.html          page
 css/app.css         styles
 js/util.js          réseau (réessais), nombres
 js/sources.js       clients des API
-js/variant.js       saisie → variant normalisé (VEP)
+js/variant.js       saisie → variation normalisée (VEP)
 js/annotate.js      chiffres et seuils
 js/comment.js       commentaire FR/EN
 js/links.js         liens
@@ -312,5 +349,5 @@ docs/validation.md  vérifications
 docs/latence.md     profil et optimisation du temps d'analyse
 ```
 
-Aucune donnée patient ne transite : seules les coordonnées du variant sont envoyées
+Aucune donnée patient ne transite : seules les coordonnées de la variation sont envoyées
 aux services interrogés.

@@ -60,6 +60,7 @@ for (const raw of inputs) {
         + ` | ${ctx.variant.varType} | ${ctx.variant.loc} ${ctx.variant.locField || ''}`);
       console.log(`VCF hg38 ${ctx.variant.pseudoVcf} | ${ctx.variant.hgvsc} | ${ctx.variant.proteinChange || '-'}`
         + ` | rs: ${ctx.rsid || 'n.a.'}`);
+      console.log(`Ensembl  : ${ctx.ensembl ? `${ctx.ensembl.hgvsc || ctx.ensembl.transcript} (${ctx.ensembl.matched})` : 'n.a.'}`);
       console.log(`InterVar : ${ctx.intervar ? `${ctx.intervar.label} (classe ${ctx.intervar.class}) [${ctx.intervar.criteria.join(' ')}]` : 'n.a.'}`);
       console.log(`ClinVar  : ${ctx.clinvar.count} soumission(s), ${ctx.clinvar.significance || 'n.a.'}`
         + ` [${ctx.clinvar.significances.join(' / ')}]`);

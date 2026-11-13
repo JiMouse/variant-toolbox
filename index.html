@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>variant-toolbox</title>
-<meta name="description" content="Annotation de variants et rédaction du commentaire — version web de la ToolBox SNV.">
+<meta name="description" content="Annotation de variations et rédaction du commentaire — version web de la ToolBox SNV.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%A7%AC%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/app.css">
 
@@ -87,7 +87,13 @@
          à sa droite plutôt qu'une bande pleine largeur plus bas. -->
     <div class="grid split">
       <section class="panel">
-        <h2 data-i18n="identity"></h2>
+        <!-- Copier ici porte les nomenclatures (HGVS c./p./g., pseudo-VCF, nomenclature
+             complète), et non le commentaire : c'est ce qu'on recopie d'un dossier à
+             l'autre sans vouloir tout le texte. -->
+        <div class="panel-head">
+          <h2 data-i18n="identity"></h2>
+          <button type="button" id="copyIdBtn" class="ghost" data-i18n="copy"></button>
+        </div>
         <dl id="identity" class="kv"></dl>
       </section>
 
