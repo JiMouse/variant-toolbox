@@ -82,10 +82,10 @@
   <p id="message" class="message" role="status" hidden></p>
 
   <div id="results" hidden>
-    <!-- L'identité tient en une colonne étroite : ses valeurs sont courtes et de
-         largeur bornée (HGVS, pseudo-VCF). Les liens occupent la place restante
-         à sa droite plutôt qu'une bande pleine largeur plus bas. -->
-    <div class="grid split">
+    <!-- Identité et liens se partagent la largeur à parts égales : les HGVS les
+         plus longues ne se coupent plus, et les liens tiennent dans une demi-page
+         plutôt que dans une bande pleine largeur plus bas. -->
+    <div class="grid">
       <section class="panel">
         <!-- Chaque nomenclature porte son propre bouton de copie, posé au bout de sa
              ligne (voir kv, js/app.js). Celui de l'en-tête donne les trois HGVS
