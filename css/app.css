@@ -202,6 +202,26 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .note { color: var(--muted); font-size: 11px; }
 
+/* Copie ligne par ligne : chaque nomenclature se recopie seule, dans un champ de
+   compte rendu ou dans la barre de recherche d'une base. Le bouton reste visible sans
+   survol — il n'y a pas de survol au doigt, et il doit se trouver sans le chercher.
+   La valeur garde `flex: 1` pour que tous les boutons de l'encart s'alignent en
+   colonne, et `min-width: 0` pour qu'une longue nomenclature se replie au lieu de
+   pousser le bouton hors de la ligne. */
+.kv dd.has-copy { display: flex; gap: 8px; align-items: baseline; }
+.kv dd.has-copy > :first-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+.copy-mini {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 19px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.copy-mini:hover { color: var(--ink); border-color: var(--muted); }
+
 /* Affichage progressif : une valeur encore en vol pulse doucement, pour qu'elle ne se
    confonde pas avec un « n.a. » — qui, lui, affirme que la base a répondu sans rien. */
 .pending { animation: breathe 1.4s ease-in-out infinite; }

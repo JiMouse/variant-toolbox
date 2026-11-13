@@ -87,12 +87,12 @@
          à sa droite plutôt qu'une bande pleine largeur plus bas. -->
     <div class="grid split">
       <section class="panel">
-        <!-- Copier ici porte les nomenclatures (HGVS c./p./g., pseudo-VCF, nomenclature
-             complète), et non le commentaire : c'est ce qu'on recopie d'un dossier à
-             l'autre sans vouloir tout le texte. -->
+        <!-- Chaque nomenclature porte son propre bouton de copie, posé au bout de sa
+             ligne (voir kv, js/app.js). Celui de l'en-tête donne les trois HGVS
+             ensemble — c., p. et g., une par ligne et chacune libellée. -->
         <div class="panel-head">
           <h2 data-i18n="identity"></h2>
-          <button type="button" id="copyIdBtn" class="ghost" data-i18n="copy"></button>
+          <button type="button" id="copyIdBtn" class="ghost" data-i18n="copyHgvs"></button>
         </div>
         <dl id="identity" class="kv"></dl>
       </section>

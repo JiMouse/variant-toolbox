@@ -15,9 +15,8 @@ Page statique, sans étape de build, hébergée sur GitHub Pages.
    - pseudo-VCF hg38 — `chr17-7675088-C-T` (`17:7675088:C:T` fonctionne aussi).
 2. Choisir la classe (3, 4 ou 5).
 3. **Analyser.** Les chiffres, les liens et le commentaire s'affichent ;
-   le bouton **Copier** du commentaire met celui-ci dans le presse-papier, celui de
-   l'encart **Identité de la variation** met les nomenclatures — HGVS c. (RefSeq et
-   Ensembl), p., g., pseudo-VCF, et la nomenclature complète.
+   le bouton **Copier** du commentaire met celui-ci dans le presse-papier, et chaque
+   nomenclature de l'encart **Identité de la variation** porte le sien (voir plus bas).
 
 Le choix du **transcrit** suit la saisie : une entrée VCF utilise le transcrit
 **MANE Select**, une entrée HGVS utilise le transcrit saisi, avec une indication
@@ -124,8 +123,15 @@ mygene.info + E-utilities qui coûtait 1,4 s. La page ouvre aussi ses connexions
 L'encart **Identité de la variation** porte les cinq nomenclatures, et finit par la
 **nomenclature complète** — la même ligne, mot pour mot, que la première ligne du
 commentaire : `hg38 chr17:g.7675088C>T NM_000546.6(TP53):c.524G>A p.(Arg175His)`.
-Le bouton **Copier** de l'encart les met toutes dans le presse-papier, chacune
-précédée de son libellé.
+
+**Un bouton de copie par nomenclature**, posé au bout de sa ligne : HGVS c. (RefSeq
+et Ensembl), p., g., pseudo-VCF et nomenclature complète. Il copie la **valeur
+seule**, exactement celle qui est affichée — c'est pourquoi « hg38 » est écrit en note
+sur la ligne du `g.` et non collé devant la nomenclature : un
+`hg38 chr17:g.7675088C>T` n'entre pas dans la recherche d'une base. Le bouton
+**Copier c. p. g.** de l'en-tête donne les trois ensemble, une par ligne et chacune
+précédée de son libellé : sortis de l'écran, un `c.` et un `g.` ne se distinguent plus
+que par leur accession.
 
 **Transcrit Ensembl.** Le transcrit RefSeq retenu est doublé de son équivalent
 Ensembl et de la nomenclature c. correspondante. Sur un transcrit **MANE Select** —

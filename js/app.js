@@ -32,6 +32,7 @@ function applyLang() {
     el.textContent = t(lang, el.dataset.i18n);
   });
   $('variantInput').placeholder = t(lang, 'inputPlaceholder');
+  $('copyIdBtn').title = t(lang, 'copyHgvsTitle');
   $('footNote').textContent = lang === 'fr'
     ? 'Aucune donnée patient n’est transmise : seules les coordonnées de la variation sont envoyées aux services interrogés.'
     : 'No patient data leaves the page: only the variant coordinates are sent to the queried services.';
@@ -40,18 +41,53 @@ function applyLang() {
 
 /* ---------- rendu ---------- */
 
+/**
+ * Liste clé/valeur. Un **quatrième** champ dans la paire — le texte à copier — pose un
+ * bouton de copie au bout de la ligne : une nomenclature se recopie seule, dans un
+ * champ de compte rendu ou dans la barre de recherche d'une base.
+ */
 function kv(dl, pairs) {
   dl.textContent = '';
-  for (const [key, value, cls] of pairs) {
+  for (const [key, value, cls, copy] of pairs) {
     if (value === null || value === undefined || value === '') continue;
     const dt = document.createElement('dt');
     dt.textContent = key;
     const dd = document.createElement('dd');
-    if (value instanceof Node) dd.append(value);
-    else dd.textContent = value;
-    if (cls) dd.className = cls;
+    if (copy) {
+      // La valeur passe dans un span : le bouton garde ainsi sa place à droite, qu'elle
+      // tienne sur une ligne ou se replie (voir .kv dd.has-copy, css/app.css).
+      const box = document.createElement('span');
+      if (value instanceof Node) box.append(value);
+      else box.textContent = value;
+      if (cls) box.className = cls;
+      dd.className = 'has-copy';
+      dd.append(box, copyMini(copy, key));
+    } else {
+      if (value instanceof Node) dd.append(value);
+      else dd.textContent = value;
+      if (cls) dd.className = cls;
+    }
     dl.append(dt, dd);
   }
+}
+
+/** Glyphes du bouton de copie d'une ligne : au repos, puis une fois la copie faite. */
+const COPY_GLYPH = '⧉';
+const COPIED_GLYPH = '✓';
+
+/** Bouton de copie d'une **seule** valeur, posé au bout de sa ligne. */
+function copyMini(text, what) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'copy-mini';
+  b.textContent = COPY_GLYPH;
+  // Un glyphe seul ne dit pas ce qu'il copie : le libellé de la ligne le nomme, pour
+  // le survol comme pour un lecteur d'écran.
+  const label = t(lang, 'copyValue', { what });
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.addEventListener('click', () => copyToClipboard(text, b, COPY_GLYPH, COPIED_GLYPH));
+  return b;
 }
 
 function table(el, headers, rows) {
@@ -154,6 +190,7 @@ function renderIdentity() {
   const ens = ctx.ensembl;
   const ensNote = ens && ens.matched === 'other' ? t(lang, 'ensOther') : null;
   const ensWait = !ens && isPending('ens');
+  const nomen = buildNomenclature(v);
 
   kv($('identity'), [
     [t(lang, 'gene'), v.gene],
@@ -169,40 +206,41 @@ function renderIdentity() {
         + (v.locField && v.locField !== v.locNum ? ` (${v.locField})`
           : (isPending('struct') ? ` (${waitText()})` : ''))
       : null],
-    [t(lang, 'hgvsc'), v.hgvsc, 'mono'],
+    [t(lang, 'hgvsc'), v.hgvsc, 'mono', v.hgvsc],
     [t(lang, 'hgvscEns'), ens && ens.hgvsc
       ? withNote(ens.hgvsc, ensNote)
-      : (ensWait ? waitText() : NA), ens && ens.hgvsc ? 'mono' : (ensWait ? 'na pending' : 'na')],
-    [t(lang, 'hgvsp'), v.hgvsp, 'mono'],
-    [t(lang, 'hgvsg'), `hg38 ${v.genomicHgvs}`, 'mono'],
-    [t(lang, 'pseudoVcf'), v.pseudoVcf, 'mono'],
+      : (ensWait ? waitText() : NA), ens && ens.hgvsc ? 'mono' : (ensWait ? 'na pending' : 'na'),
+    ens && ens.hgvsc],
+    [t(lang, 'hgvsp'), v.hgvsp, 'mono', v.hgvsp],
+    // « hg38 » est l'assemblage, pas la nomenclature : il passe en note, pour que la
+    // valeur affichée soit exactement celle que le bouton copie. Un
+    // « hg38 chr17:g.7675088C>T » collé dans la recherche d'une base n'y entre pas.
+    [t(lang, 'hgvsg'), v.genomicHgvs ? withNote(v.genomicHgvs, 'hg38') : null, 'mono', v.genomicHgvs],
+    [t(lang, 'pseudoVcf'), v.pseudoVcf, 'mono', v.pseudoVcf],
     [t(lang, 'dbsnp'), ctx.rsid, 'mono'],
     [t(lang, 'normSource'), ctx.source && ctx.source !== 'VEP' ? ctx.source : null],
     // En dernier, la ligne que le compte rendu recopie telle quelle : c'est aussi
     // la première ligne du commentaire (voir buildNomenclature, js/comment.js).
-    [t(lang, 'nomenclature'), buildNomenclature(v), 'mono'],
+    [t(lang, 'nomenclature'), nomen, 'mono', nomen],
   ]);
   $('copyIdBtn').disabled = false;
 }
 
 /**
- * Les nomenclatures en clair, pour le presse-papier.
+ * Les trois nomenclatures HGVS du transcrit retenu, d'un coup.
  *
- * Chaque ligne porte son libellé : recopiée dans un dossier, une nomenclature doit
- * dire de quoi elle est la nomenclature — une accession ENST et une accession NM_
- * se ressemblent assez pour qu'on les confonde une fois sorties de l'écran.
+ * Une par ligne et chacune précédée de son libellé : recopiée dans un dossier, une
+ * nomenclature doit dire de quoi elle est la nomenclature — un `c.` et un `g.` sortis
+ * de l'écran ne se distinguent plus que par leur accession. Les valeurs seules, elles,
+ * se copient ligne par ligne, par le bouton de chaque ligne.
  */
-function identityText() {
+function hgvsText() {
   const v = ctx.variant;
-  const ens = ctx.ensembl;
   const sep = lang === 'fr' ? ' : ' : ': ';
   return [
-    [t(lang, 'nomenclature'), buildNomenclature(v)],
     [t(lang, 'hgvsc'), v.hgvsc],
-    [t(lang, 'hgvscEns'), ens ? ens.hgvsc : null],
     [t(lang, 'hgvsp'), v.hgvsp],
-    [t(lang, 'hgvsg'), v.genomicHgvs ? `hg38 ${v.genomicHgvs}` : null],
-    [t(lang, 'pseudoVcf'), v.pseudoVcf],
+    [t(lang, 'hgvsg'), v.genomicHgvs],
   ].filter(([, value]) => value).map(([label, value]) => `${label}${sep}${value}`).join('\n');
 }
 
@@ -795,7 +833,7 @@ $('regenBtn').addEventListener('click', () => { if (ctx) renderComment(); });
  * Copie, avec repli sur `execCommand` : l'API presse-papier demande un contexte
  * sécurisé, et la page s'ouvre aussi en `file://` pendant les essais.
  */
-async function copyToClipboard(text, btn) {
+async function copyToClipboard(text, btn, idle, done) {
   try {
     await navigator.clipboard.writeText(text);
   } catch (e) {
@@ -808,13 +846,15 @@ async function copyToClipboard(text, btn) {
     ta.select();
     try { document.execCommand('copy'); } finally { ta.remove(); }
   }
-  btn.textContent = t(lang, 'copied');
-  setTimeout(() => { btn.textContent = t(lang, 'copy'); }, 1500);
+  btn.textContent = done;
+  setTimeout(() => { btn.textContent = idle; }, 1500);
 }
 
-$('copyBtn').addEventListener('click', () => copyToClipboard($('comment').value, $('copyBtn')));
+$('copyBtn').addEventListener('click', () => copyToClipboard(
+  $('comment').value, $('copyBtn'), t(lang, 'copy'), t(lang, 'copied'),
+));
 $('copyIdBtn').addEventListener('click', () => {
-  if (ctx) copyToClipboard(identityText(), $('copyIdBtn'));
+  if (ctx) copyToClipboard(hgvsText(), $('copyIdBtn'), t(lang, 'copyHgvs'), t(lang, 'copied'));
 });
 
 /* ---------- démarrage ---------- */
