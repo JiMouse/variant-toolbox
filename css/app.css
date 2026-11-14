@@ -90,7 +90,12 @@ footer a { color: var(--muted); }
 .panel-head h2 { margin: 0; }
 
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
-@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+/* `minmax(0, …)` et non `1fr` : une colonne de grille ne descend pas sous la
+   largeur min-content de son contenu, et le tableau gnomAD en demande 372 px
+   (« Hétérozygotes », « Homozygotes »). Sans ce plancher à zéro, c'est la page
+   entière qui déborde sous ~430 px au lieu du seul tableau, qui a son propre
+   ascenseur horizontal (.table-wrap). */
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* — Formulaire — */
 
