@@ -58,6 +58,11 @@ for (const raw of inputs) {
       console.log(`Gène ${ctx.gene.symbol} | transcrit ${ctx.variant.transcript}`
         + ` (${ctx.variant.isMane ? 'MANE Select' : `non-MANE, MANE = ${ctx.variant.maneTranscript || '?'}`})`
         + ` | ${ctx.variant.varType} | ${ctx.variant.loc} ${ctx.variant.locField || ''}`);
+      // D'où vient le type de variation, et ce qu'en dit l'annotation gnomAD.
+      console.log(`Type     : ${ctx.variant.varType} (${ctx.variant.varTypeFrom})`
+        + ` | contrôle gnomAD : ${ctx.varTypeCheck
+          ? `${ctx.varTypeCheck.term} — ${ctx.varTypeCheck.agrees ? 'concordant' : 'DIVERGENT'}`
+          : 'aucun (variation ou transcrit absents de gnomAD)'}`);
       console.log(`VCF hg38 ${ctx.variant.pseudoVcf} | ${ctx.variant.hgvsc} | ${ctx.variant.proteinChange || '-'}`
         + ` | rs: ${ctx.rsid || 'n.a.'}`);
       console.log(`Ensembl  : ${ctx.ensembl ? `${ctx.ensembl.hgvsc || ctx.ensembl.transcript} (${ctx.ensembl.matched})` : 'n.a.'}`);

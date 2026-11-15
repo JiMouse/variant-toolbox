@@ -53,7 +53,8 @@ retombe silencieusement sur Monarch.
 |---|---|
 | Gène, transcrit, conséquence, exon/intron, HGVS c./p./g., MANE | Ensembl VEP REST (`refseq=1`) |
 | Les mêmes, Ensembl en panne | VariantValidator (`mane_select`), le type de variation étant **calculé** sur la structure UCSC |
-| Transcrit Ensembl et nomenclature c. correspondante | apparié par VEP (`mane_select`), ou Ensembl VEP REST sur le cache Ensembl |
+| Transcrit Ensembl et nomenclature c. correspondante | apparié par VEP (`mane_select`), sinon table MANE d'UCSC (piste `mane`), sinon Ensembl VEP REST sur le cache Ensembl |
+| Contrôle du type de variation | annotation VEP publiée par gnomAD, dans la requête de fréquence déjà émise |
 | gnomAD v4.1 exomes + génomes (AC, htz, hmz, AF) | API GraphQL gnomAD |
 | gnomAD v2.1.1 exomes | MyVariant.info (`gnomad_exome`) |
 | SIFT, PolyPhen-2, AlphaMissense, REVEL, MetaLR, CADD, GERP++, phyloP, phastCons, InterPro | MyVariant.info (`dbnsfp`) |
@@ -88,6 +89,22 @@ des exons pour l'épissage, nomenclature protéique pour le reste. La structure 
 d'UCSC, déjà demandée pour les schémas — donc sans appel supplémentaire, et sans
 Ensembl. Sur les 15 variations d'épreuve, le type rendu est **identique à celui de
 VEP**, bordures d'exon comprises ([docs/validation.md](docs/validation.md#5-panne-ensembl--repli-vérifié)).
+
+**Le transcrit Ensembl ne demande plus Ensembl non plus**, quand le transcrit retenu
+est un transcrit MANE. La piste `mane` d'UCSC *est* la table d'appariement de MANE :
+997 octets et ~0,2 s à chaud donnent l'ENST versionné en face du NM, là où il fallait
+un second appel à VEP sur le cache Ensembl — celui dont le délai est à 20 s parce qu'un
+gène à beaucoup de transcrits y coûte 13 à 14 s. La garantie de numérotation c. est la
+même que pour l'appariement rendu par VEP : c'est la définition de MANE. Un transcrit
+**non**-MANE continue de passer par VEP, faute d'appariement publié.
+
+**Le type de variation est contrôlé par gnomAD**, sans requête de plus : gnomAD publie
+l'annotation VEP de chaque variation qu'il contient, apparié au transcrit RefSeq, et
+trois champs ajoutés à la requête de fréquence suffisent à la lire. Sur les 12
+variations d'épreuve présentes dans gnomAD, le terme est **concordant 12 fois sur 12**.
+Ce n'est pas une source de repli : une variation absente de gnomAD — la plupart de
+celles qu'on analyse — ne renvoie rien, et ce silence ne dit rien du type. L'écart,
+s'il arrive, est signalé en nommant les deux termes et leur origine.
 
 Quand les **deux** sources tombent ensemble — c'est arrivé, Ensembl en HTTP 500 et
 VariantValidator en maintenance — aucune analyse n'est possible : sans gène ni

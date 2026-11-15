@@ -2,7 +2,7 @@
 
 import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
-import { buildComment, buildNomenclature } from './comment.js';
+import { buildComment, buildNomenclature, varTypeLabel } from './comment.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds } from './structure.js';
@@ -802,6 +802,18 @@ async function run() {
       // soit établi sur la structure exonique, soit encore déduit des nomenclatures.
       const typed = ctx.variant && ctx.variant.varTypeFrom === 'structure';
       notes.push(t(lang, typed ? 'fallbackSourceTyped' : 'fallbackSource', { src: ctx.source }));
+
+      // Le contrôle gnomAD n'est rapporté que sur le chemin de repli : sur le chemin
+      // normal il comparerait l'annotation VEP d'Ensembl à celle, plus ancienne, que
+      // gnomAD en a tirée — un écart ne dirait alors rien de la variation.
+      const chk = ctx.varTypeCheck;
+      if (chk && chk.agrees) notes.push(t(lang, 'varTypeConfirmed'));
+      else if (chk) {
+        notes.push(t(lang, 'varTypeMismatch', {
+          mine: varTypeLabel(ctx.variant, lang) || ctx.variant.varType,
+          theirs: varTypeLabel({ varType: chk.term }, lang) || chk.term,
+        }));
+      }
     }
     if (ctx.degraded === 'CONSEQUENCE_UNKNOWN') notes.push(t(lang, 'degradedConsequence'));
     if (ctx.notFoundInMyVariant) notes.push(t(lang, 'notFound'));

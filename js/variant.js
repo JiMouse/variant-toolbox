@@ -6,7 +6,7 @@
 
 import {
   vepHgvs, vepEnsembl, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
-  variantValidator, variantValidatorTranscript, NC_ACCESSION,
+  variantValidator, variantValidatorTranscript, ucscMane, NC_ACCESSION,
 } from './sources.js';
 import { hedge, errorText, predictedProtein } from './util.js';
 // Les seuils d'épissage sont définis une seule fois, là où ils sont dessinés.
@@ -264,7 +264,11 @@ export function cPart(hgvs) {
  *    et la numérotation c. est la même des deux côtés : c'est la définition même de
  *    MANE Select (même intervalle génomique, même CDS, mêmes UTR, à la base près).
  *    Rien à demander, la ligne s'affiche aussitôt que l'identité.
- * 2. **Transcrit non-MANE ou repli VariantValidator** — un second appel à VEP, sur le
+ * 2. **Repli VariantValidator sur un transcrit MANE** — l'appariement est demandé à la
+ *    piste `mane` d'UCSC (997 octets, ~0,8 s) plutôt qu'à VEP, puisque c'est la table
+ *    de MANE elle-même. La même garantie qu'au cas 1 s'applique alors à la
+ *    numérotation c., et Ensembl n'est pas sollicité du tout.
+ * 3. **Transcrit non-MANE** — un second appel à VEP, sur le
  *    cache Ensembl cette fois, car VEP sert l'un **ou** l'autre jeu de transcrits.
  *    L'ENST retenu est, dans l'ordre : celui que VEP apparie lui-même au transcrit
  *    saisi, puis celui dont la numérotation c. est **identique** (même CDS, donc une
@@ -275,6 +279,32 @@ export function cPart(hgvs) {
  * Renvoie `null` plutôt que d'échouer : cette ligne n'entre dans aucun chiffre et dans
  * aucune phrase du commentaire.
  */
+/**
+ * ENST apparié au transcrit RefSeq retenu, lu dans la table MANE (UCSC).
+ *
+ * L'appariement est reconnu sur `ncbiId`, jamais sur l'ordre des lignes : un gène qui
+ * a un transcrit MANE Plus Clinical en rend deux. La version est comparée d'abord
+ * telle quelle, puis sans elle — UCSC ne sert que la version courante, et une saisie
+ * sur `NM_000546.5` doit continuer d'afficher la ligne (même raison que `pickRecord`,
+ * js/structure.js).
+ *
+ * `null` dès que l'appariement n'existe pas — transcrit non-MANE, ou UCSC muet : c'est
+ * le cas qui justifie encore l'appel à VEP.
+ */
+async function manePairing(variant) {
+  if (!variant.transcript || !variant.chr || !variant.pos) return null;
+  try {
+    const rows = await ucscMane(variant.chr, variant.pos);
+    const acc = String(variant.transcript).split('.')[0];
+    const row = rows.find((r) => r.ncbiId === variant.transcript)
+      || rows.find((r) => String(r.ncbiId || '').split('.')[0] === acc);
+    if (!row || !/^ENST/.test(row.name || '')) return null;
+    return { transcript: row.name, stat: row.maneStat || null };
+  } catch (e) {
+    return null;   // la ligne n'entre dans aucun chiffre : VEP reste le recours
+  }
+}
+
 export async function ensemblTranscript(variant) {
   const c = cPart(variant.hgvsc);
   if (variant.ensemblTranscript) {
@@ -282,6 +312,18 @@ export async function ensemblTranscript(variant) {
       transcript: variant.ensemblTranscript,
       hgvsc: c ? `${variant.ensemblTranscript}:${c}` : null,
       matched: 'mane',
+    };
+  }
+
+  // Appariement MANE par UCSC, avant d'aller redemander à Ensembl ce que MANE publie.
+  const mane = await manePairing(variant);
+  if (mane) {
+    return {
+      transcript: mane.transcript,
+      hgvsc: c ? `${mane.transcript}:${c}` : null,
+      matched: 'mane',
+      maneStat: mane.stat,
+      source: 'UCSC',
     };
   }
 

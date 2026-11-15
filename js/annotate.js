@@ -7,7 +7,7 @@ import {
   monarchDiseases, monarchDisease, monarchInheritance, omimGeneMap, mobiDetailsId,
 } from './sources.js';
 import {
-  exonTotal, ensemblTranscript, consequenceFromStructure, isNullVariant,
+  exonTotal, ensemblTranscript, consequenceFromStructure, isNullVariant, mapConsequence,
 } from './variant.js';
 import { fetchStructure } from './structure.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
@@ -392,6 +392,32 @@ function withStructuralType(variant, struct) {
   };
 }
 
+/**
+ * Contrôle du type de variation par l'annotation VEP que publie gnomAD.
+ *
+ * gnomAD porte le terme de conséquence de chaque variation qu'il contient, apparié au
+ * transcrit RefSeq. Comparé au type retenu ici, il confirme — ou contredit — un type
+ * établi sans Ensembl. C'est un **contrôle**, jamais une source : une variation absente
+ * de gnomAD, cas de la plupart de celles qu'on analyse, ne renvoie rien, et ce silence
+ * ne dit rien du type.
+ *
+ * Le rapprochement se fait sur l'accession sans version : `refseq_id` ne la porte pas,
+ * et une version de transcrit différente n'empêche pas la comparaison du terme.
+ *
+ * @returns {{source: string, term: string, agrees: boolean}|null}
+ */
+export function buildVarTypeCheck(g4, variant) {
+  const tcs = get(g4, 'data.variant.transcript_consequences');
+  if (!Array.isArray(tcs) || !tcs.length || !variant || !variant.transcript) return null;
+  const acc = String(variant.transcript).split('.')[0];
+  const hit = tcs.find((t) => String(t.refseq_id || '').split(',')
+    .some((id) => id.trim().split('.')[0] === acc));
+  if (!hit) return null;
+  const term = mapConsequence(hit.consequence_terms || []);
+  if (!term) return null;
+  return { source: 'gnomAD', term, agrees: term === variant.varType };
+}
+
 function assemble(variant, out, errors, pending) {
   const mv = out.mv && !out.mv.__notFound ? out.mv : null;
   const g = out.gene || {};
@@ -435,6 +461,8 @@ function assemble(variant, out, errors, pending) {
     domain: buildDomain(mv) || (variant.domains || []).map((d) => d.name).find(Boolean) || null,
     clinvar: buildClinvar(mv),
     gnomad: buildGnomad(out.g4, mv),
+    // Comparé au type **retenu**, donc après la structure exonique.
+    varTypeCheck: buildVarTypeCheck(out.g4, typed),
     intervar: buildIntervar(out.iv),
     gene: {
       symbol: variant.gene,

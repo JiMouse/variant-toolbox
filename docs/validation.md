@@ -158,6 +158,40 @@ applique le même ordre.
 Les **41** vérifications hors réseau correspondantes sont dans `tools/test-structure.mjs`
 (98 au total avec la géométrie exonique, contre 57 auparavant).
 
+### Contrôle du type par l'annotation gnomAD
+
+gnomAD publie l'annotation VEP de chaque variation qu'il contient, appariée au transcrit
+RefSeq. Trois champs ajoutés à la requête de fréquence **déjà émise** la rendent
+lisible — aucun aller-retour de plus, 0,9 à 3,8 KiB selon le nombre de transcrits du
+gène. Comparé au type retenu par le repli (VariantValidator + structure UCSC) :
+
+| Variations d'épreuve | Résultat |
+|---|---|
+| présentes dans gnomAD | **12 concordantes, 0 divergente** |
+| absentes de gnomAD, ou transcrit absent de son annotation | 3 — aucun contrôle, et rien n'est affirmé |
+
+Les trois sans contrôle disent la limite : `c.-28C>T` et `c.1182A>G` ne sont pas dans
+gnomAD, et `NM_001126112.3:c.524G>A` y est (17-7675088-C-T) mais sur un transcrit que
+son annotation ne porte pas. C'est un **contrôle**, jamais une source : la plupart des
+variations analysées en clinique sont justement celles que gnomAD ne connaît pas.
+
+### Transcrit Ensembl sans Ensembl : la table MANE d'UCSC
+
+La piste `mane` d'UCSC est la table d'appariement de MANE elle-même. Une requête d'une
+base rend l'ENST versionné en face du NM versionné, les deux protéines et le statut :
+
+| Transcrit retenu | Rendu | Temps |
+|---|---|---|
+| `NM_000546.6` (TP53) | `ENST00000269305.9:c.524G>A`, MANE Select | 846 ms à froid, ~0,2 s à chaud |
+| `NM_000492.4` (CFTR) | `ENST00000003084.11:c.1521_1523del`, MANE Select | 199 ms |
+| `NM_058195.4` (CDKN2A) | `ENST00000579755.2:c.*86G>A`, **MANE Plus Clinical** | 206 ms |
+| `NM_000546.5` (version ancienne) | `ENST00000269305.9`, MANE Select | 205 ms |
+| `NM_001126112.3` (non-MANE) | aucun appariement → appel à VEP | — |
+
+La dernière ligne est la limite, et elle s'est vérifiée d'elle-même pendant la mesure :
+l'appel à VEP qu'elle déclenche a **dépassé son délai de 20 s**, Ensembl étant lent ce
+jour-là. C'est exactement le coût que les quatre premières lignes n'ont plus à payer.
+
 ### Transcrit du repli : `mane_select` et non `mane`
 
 Sur un gène qui a un transcrit **MANE Plus Clinical**, `mane` renvoie deux entrées et

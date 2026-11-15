@@ -110,6 +110,8 @@ export const UI = {
     fallbackSourceTyped: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. '
       + 'Le type de variation est établi sur la structure exonique du transcrit (UCSC) ; vérifier le transcrit.',
     degradedConsequence: 'Type de variation non déterminé par la source de repli : la phrase correspondante est omise du commentaire.',
+    varTypeConfirmed: 'Type de variation confirmé par l’annotation gnomAD.',
+    varTypeMismatch: 'Type de variation : « {mine} » ici, « {theirs} » d’après l’annotation gnomAD. Vérifier le transcrit et la position.',
     normSource: 'Source de normalisation',
     errGeneric: 'Échec de l’analyse : {msg}',
     notFound: 'Variation absente de MyVariant.info : les prédictions et ClinVar restent à « n.a. ».',
@@ -275,6 +277,8 @@ export const UI = {
     fallbackSourceTyped: 'Normalisation done by {src}: Ensembl too slow or unavailable. '
       + 'The variant type is established from the exon structure of the transcript (UCSC); check the transcript.',
     degradedConsequence: 'The fallback source could not determine the variant type: that sentence is omitted from the comment.',
+    varTypeConfirmed: 'Variant type confirmed by the gnomAD annotation.',
+    varTypeMismatch: 'Variant type: "{mine}" here, "{theirs}" according to the gnomAD annotation. Check the transcript and the position.',
     normSource: 'Normalisation source',
     errGeneric: 'Analysis failed: {msg}',
     notFound: 'Variant absent from MyVariant.info: predictions and ClinVar stay at "n.a.".',

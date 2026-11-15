@@ -159,13 +159,29 @@ export function myVariant(id) {
   return hedge(once, once, { delay: 1500 });
 }
 
-/** gnomAD v4.1 — exomes + génomes, AC / AN / AF / homozygotes. */
+/**
+ * gnomAD v4.1 — exomes + génomes, AC / AN / AF / homozygotes.
+ *
+ * `transcript_consequences` est demandé **dans la même requête**, donc sans aller-retour
+ * supplémentaire : gnomAD publie l'annotation VEP de chaque variation qu'il contient,
+ * avec l'appariement RefSeq. C'est un contrôle gratuit du type de variation, utile
+ * surtout quand Ensembl est tombé et que le type a été calculé sans lui (voir
+ * `buildVarTypeCheck`, js/annotate.js). Il ne peut pas servir de source : une variation
+ * absente de gnomAD — c'est-à-dire la plupart de celles qu'on analyse — répond
+ * « Variant not found ».
+ *
+ * Trois champs de plus et rien d'autre : `domains` doublait le poids de la réponse
+ * pour des identifiants bruts (`ENSP_mappings:1tup`), sans rapport avec le nom de
+ * domaine InterPro que lit le commentaire. Mesuré à 0,9–3,8 KiB selon le nombre de
+ * transcrits du gène (4 sur BRCA2, 22 sur TP53).
+ */
 export function gnomad4(variantId) {
   const query = `query V($v: String!) {
     variant(variantId: $v, dataset: gnomad_r4) {
       variant_id rsids
       exome { ac an af homozygote_count }
       genome { ac an af homozygote_count }
+      transcript_consequences { refseq_id is_mane_select consequence_terms }
     }
   }`;
   return fetchJSON('https://gnomad.broadinstitute.org/api', {
@@ -411,5 +427,27 @@ export async function ucscRefSeq(chr, pos) {
     + `;chrom=chr${chr};start=${p - 1};end=${p}`;
   const r = await fetchJSON(url, { retries: 1, timeout: 8000 });
   const items = r && (r.ncbiRefSeq || (r.track && r[r.track]));
+  return Array.isArray(items) ? items : [];
+}
+
+/**
+ * Appariement MANE à une position hg38 : l'ENST et le NM qui se correspondent.
+ *
+ * La piste `mane` d'UCSC **est** la table d'appariement de MANE, et une requête d'une
+ * base en rend la ligne entière : `name` porte l'ENST versionné, `ncbiId` le NM
+ * versionné, `ensemblProtAcc`/`ncbiProtAcc` les deux protéines, `maneStat` le statut
+ * (« MANE Select » ou « MANE Plus Clinical »). Mesuré à **997 octets et ~0,8 s**, là
+ * où obtenir le seul ENST demandait un second appel à VEP sur le cache Ensembl —
+ * 13,2 s sur DMD, 14,2 s sur CFTR, d'où son délai de 20 s.
+ *
+ * Un gène qui a un transcrit MANE Plus Clinical en rend deux lignes (vérifié sur
+ * CDKN2A) : c'est `ncbiId` qui désigne celle qu'on cherche, jamais l'ordre.
+ */
+export async function ucscMane(chr, pos) {
+  const p = Number(pos);
+  const url = 'https://api.genome.ucsc.edu/getData/track?genome=hg38;track=mane'
+    + `;chrom=chr${chr};start=${p - 1};end=${p}`;
+  const r = await fetchJSON(url, { retries: 1, timeout: 8000 });
+  const items = r && (r.mane || (r.track && r[r.track]));
   return Array.isArray(items) ? items : [];
 }

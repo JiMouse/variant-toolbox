@@ -8,6 +8,7 @@ import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
 import { ensemblTranscript } from '../js/variant.js';
+import { buildVarTypeCheck } from '../js/annotate.js';
 import { hedge, predictedProtein } from '../js/util.js';
 
 let pass = 0;
@@ -241,6 +242,43 @@ const ens = await ensemblTranscript({
 check('MANE Select : ENST apparié', ens.transcript, 'ENST00000269305.9');
 check('MANE Select : même numérotation c.', ens.hgvsc, 'ENST00000269305.9:c.524G>A');
 check('MANE Select : aucun appel réseau', ens.matched, 'mane');
+
+/* — Contrôle du type par l'annotation gnomAD —
+ *
+ * gnomAD apparie son annotation VEP au transcrit RefSeq **sans version** : le
+ * rapprochement se fait donc sur l'accession seule, et une version différente ne doit
+ * pas empêcher la comparaison du terme. */
+
+const g4 = (tcs) => ({ data: { variant: { transcript_consequences: tcs } } });
+const TP53_TC = [
+  { refseq_id: 'NM_001126112', consequence_terms: ['intron_variant'] },
+  { refseq_id: 'NM_000546', is_mane_select: true, consequence_terms: ['missense_variant'] },
+];
+
+const okCheck = buildVarTypeCheck(g4(TP53_TC), { transcript: 'NM_000546.6', varType: 'missense' });
+check('gnomAD concordant : terme', okCheck.term, 'missense');
+check('gnomAD concordant : verdict', okCheck.agrees, true);
+check('gnomAD concordant : source nommée', okCheck.source, 'gnomAD');
+// Le transcrit retenu n'est pas forcément le premier de la liste de gnomAD.
+check('transcrit reconnu, pas le premier venu',
+  buildVarTypeCheck(g4(TP53_TC), { transcript: 'NM_001126112.3', varType: 'intronic' }).term, 'intronic');
+check('version différente : comparaison quand même possible',
+  buildVarTypeCheck(g4(TP53_TC), { transcript: 'NM_000546.5', varType: 'missense' }).agrees, true);
+check('divergence signalée',
+  buildVarTypeCheck(g4(TP53_TC), { transcript: 'NM_000546.6', varType: 'intronic' }).agrees, false);
+// Le terme le plus sévère l'emporte, comme chez VEP (ordre de CONSEQUENCE_MAP).
+check('deux termes : le plus sévère',
+  buildVarTypeCheck(g4([{ refseq_id: 'NM_000492', consequence_terms: ['splice_region_variant', 'synonymous_variant'] }]),
+    { transcript: 'NM_000492.4', varType: 'synonymous' }).term, 'synonymous');
+
+/* Aucun contrôle possible : le silence ne dit rien du type, donc `null` et non un
+ * verdict. Trois silences différents, un seul résultat. */
+check('transcrit absent de l’annotation gnomAD',
+  buildVarTypeCheck(g4(TP53_TC), { transcript: 'NM_999999.1', varType: 'missense' }), null);
+check('variation absente de gnomAD',
+  buildVarTypeCheck({ data: { variant: null } }, { transcript: 'NM_000546.6', varType: 'missense' }), null);
+check('gnomAD en échec', buildVarTypeCheck(null, { transcript: 'NM_000546.6', varType: 'missense' }), null);
+check('aucun transcrit retenu', buildVarTypeCheck(g4(TP53_TC), { varType: 'missense' }), null);
 
 /* — Libellés : les deux langues doivent couvrir exactement les mêmes clés — */
 // Une clé absente s'affichait telle quelle dans l'interface (« fallbackSource »).
