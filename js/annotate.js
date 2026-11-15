@@ -8,6 +8,7 @@ import {
 } from './sources.js';
 import {
   exonTotal, ensemblTranscript, consequenceFromStructure, isNullVariant, mapConsequence,
+  soTerms,
 } from './variant.js';
 import { fetchStructure } from './structure.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
@@ -385,11 +386,28 @@ function withStructuralType(variant, struct) {
     ...variant,
     varType,
     varTypeNull: isNullVariant(varType),
-    consequenceTerms: [varType],
+    consequenceTerms: soTerms(varType, {
+      location: struct.location, ref: variant.ref, alt: variant.alt,
+    }),
     varTypeFrom: 'structure',
     // La phrase de type n'est plus omise : le motif de dégradation disparaît avec elle.
     degraded: variant.degraded === 'CONSEQUENCE_UNKNOWN' ? null : variant.degraded,
   };
+}
+
+/**
+ * Transcrit MANE Select du gène, quand la normalisation ne l'a pas nommé.
+ *
+ * Sur une saisie HGVS portant un transcrit **non**-MANE, VEP rend toujours le MANE
+ * Select du gène à côté ; VariantValidator, jamais — l'encart affichait « non-MANE,
+ * MANE = ? », là où VEP affichait « MANE = NM_000546.6 ». Le nom est lu dans la table
+ * MANE d'UCSC, par l'appel que la ligne Ensembl fait déjà (voir `ensemblTranscript`).
+ *
+ * `isMane` n'est pas touché : le transcrit retenu n'est pas devenu MANE pour autant.
+ */
+function withManeTranscript(variant, ens) {
+  if (variant.maneTranscript || !ens || !ens.maneRefSeq) return variant;
+  return { ...variant, maneTranscript: ens.maneRefSeq };
 }
 
 /**
@@ -432,7 +450,7 @@ function assemble(variant, out, errors, pending) {
   const withExons = total && variant.locNum && !String(variant.locField || '').includes('/')
     ? { ...variant, locField: `${variant.locNum}/${total}` }
     : variant;
-  const typed = withStructuralType(withExons, struct);
+  const typed = withManeTranscript(withStructuralType(withExons, struct), out.ens);
 
   /* La structure exonique n'alimente le commentaire que lorsqu'elle porte le total
    * d'exons que la normalisation n'a pas donné — « exon 5 » → « exon 5/11 », le cas du

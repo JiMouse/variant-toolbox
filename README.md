@@ -106,6 +106,19 @@ Ce n'est pas une source de repli : une variation absente de gnomAD — la plupar
 celles qu'on analyse — ne renvoie rien, et ce silence ne dit rien du type. L'écart,
 s'il arrive, est signalé en nommant les deux termes et leur origine.
 
+**Ce qui reste différent, et ce que l'avertissement dit donc.** Le type de variation,
+lui, ne l'est plus : il est établi, concordant avec VEP sur les 15 variations d'épreuve
+et confirmé par gnomAD quand il la connaît. L'encart nomme aussi le MANE Select du gène
+sur un transcrit non-MANE — VEP le rendait toujours, VariantValidator jamais, et la
+ligne affichait « MANE = ? » — et la ligne « Conséquence » parle le même vocabulaire SO
+des deux côtés, `splice_region_variant` compris. Il reste **le transcrit**, et une
+limite précise : là où le gène n'a pas de transcrit MANE — ARN long non codant, locus
+intergénique —, le repli n'a rien à annoter. Il le dit alors pour ce qu'il est, sans
+envoyer corriger une saisie correcte, et la variation reste analysable en la saisissant
+en HGVS sur le transcrit voulu. C'est pourquoi l'avertissement du repli se réduit
+désormais à « vérifier le transcrit » : c'est la seule chose qui puisse encore différer
+de ce que VEP aurait choisi.
+
 Quand les **deux** sources tombent ensemble — c'est arrivé, Ensembl en HTTP 500 et
 VariantValidator en maintenance — aucune analyse n'est possible : sans gène ni
 coordonnées, aucune base n'est interrogeable. L'interface le dit alors explicitement,

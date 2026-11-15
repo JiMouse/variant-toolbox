@@ -257,7 +257,9 @@ function renderIdentity() {
   // sinon. Quand l'ENST retenu n'est l'équivalent d'aucun transcrit RefSeq retenu, sa
   // nomenclature compte depuis un autre point de départ : l'avertissement est posé sur
   // la ligne du c., la valeur qu'on recopie.
-  const ens = ctx.ensembl;
+  // `ctx.ensembl` peut n'apporter que le nom du transcrit MANE du gène, sans ENST à
+  // montrer (voir ensemblTranscript) : la ligne doit alors rester « n.a. ».
+  const ens = ctx.ensembl && ctx.ensembl.transcript ? ctx.ensembl : null;
   const ensNote = ens && ens.matched === 'other' ? t(lang, 'ensOther') : null;
   const ensWait = !ens && isPending('ens');
   const nomen = buildNomenclature(v);
@@ -837,6 +839,7 @@ async function run() {
     // des deux services et contient donc parfois « Failed to fetch » ou « VEP: … »,
     // qui ne doivent pas détourner le diagnostic vers une branche moins précise.
     if (code === 'SOURCES_UNAVAILABLE') message(t(lang, 'errSourcesDown', { msg }), 'error');
+    else if (code === 'NO_MANE_TRANSCRIPT') message(t(lang, 'errNoMane', { msg }), 'error');
     else if (code === 'VARIANT_REJECTED') message(t(lang, 'errRejected', { msg }), 'error');
     else if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
     else if (msg === 'EMPTY_INPUT') message(t(lang, 'errEmpty'), 'error');

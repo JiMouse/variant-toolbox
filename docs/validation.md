@@ -192,6 +192,36 @@ La dernière ligne est la limite, et elle s'est vérifiée d'elle-même pendant 
 l'appel à VEP qu'elle déclenche a **dépassé son délai de 20 s**, Ensembl étant lent ce
 jour-là. C'est exactement le coût que les quatre premières lignes n'ont plus à payer.
 
+### Ce qui restait différent entre les deux chemins
+
+Mesuré en coupant `rest.ensembl.org` (5 requêtes refusées), donc sur le chemin de repli
+de bout en bout :
+
+| Saisie | Avant | Après |
+|---|---|---|
+| `NM_001126112.3:c.524G>A` (transcrit non-MANE) | « non-MANE, MANE = **?** » | « non-MANE, MANE = **NM_000546.6** » |
+| `NM_000492.4:c.1584G>A` (synonyme en bordure) | Conséquence : `synonymous` | `synonymous_variant, splice_region_variant` |
+| `11-1999000-G-A` (locus H19/MRPL23, sans MANE) | « Vérifier le transcrit, la position et la **base de référence** » | « **Aucun transcrit MANE à cette position** … la variation elle-même n'est pas en cause » |
+
+Les deux premières lignes sont des différences fermées : le nom du MANE Select du gène
+est lu dans la table MANE d'UCSC — l'appel que la ligne Ensembl fait déjà — et les
+termes rendus repassent par le vocabulaire SO, le second terme compris lorsque la
+structure l'établit (`splice_region_variant, synonymous_variant` est exactement ce que
+VEP rend sur cette variation).
+
+La troisième est une **limite**, pas un correctif. Là où le gène n'a pas de transcrit
+MANE, `mane_select` écarte tous les transcrits et le repli ne peut rien annoter ; VEP,
+lui, annote NR_002196.3. L'ancien sélecteur `mane` échouait de la même façon
+(`intergenic_variant_1`, sans nomenclature), et `all`/`raw` sont dépréciés sur cet
+endpoint pour une entrée génomique. `refseq_select` répondrait — trois transcrits, sans
+indicateur MANE — mais en retenant le premier il donnerait *MRPL23* là où VEP donne
+*H19* : un autre gène, donc un autre compte rendu. Le choix est donc de refuser en le
+disant, plutôt que de deviner.
+
+Le refus porte son propre code (`NO_MANE_TRANSCRIPT`) et son propre message, parce qu'il
+n'est ni une panne ni une saisie fautive. La variation reste analysable : saisie en
+HGVS, `NR_002196.3:n.100G>A` passe par le repli et rend `11-1997743-C-T`.
+
 ### Transcrit du repli : `mane_select` et non `mane`
 
 Sur un gène qui a un transcrit **MANE Plus Clinical**, `mane` renvoie deux entrées et

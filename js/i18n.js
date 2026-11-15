@@ -105,6 +105,10 @@ export const UI = {
       + 'réessayer dans quelques minutes. Détail : {msg}',
     errRejected: 'Cette variation n’a pas pu être validée : {msg}. Vérifier le transcrit, '
       + 'la position et la base de référence (génome hg38).',
+    errNoMane: 'Aucun transcrit MANE à cette position : le service de repli n’y a rien à '
+      + 'annoter, et la variation elle-même n’est pas en cause. Relancer quand Ensembl '
+      + 'répond, ou saisir la variation en nomenclature HGVS sur le transcrit voulu — '
+      + 'le repli l’accepte alors. ({msg})',
     errNetwork: 'Service Ensembl momentanément indisponible (il renvoie des erreurs par salves). Relancer l’analyse.',
     fallbackSource: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. Vérifier le transcrit et le type de variation.',
     fallbackSourceTyped: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. '
@@ -272,6 +276,10 @@ export const UI = {
       + 'try again in a few minutes. Detail: {msg}',
     errRejected: 'This variant could not be validated: {msg}. Check the transcript, '
       + 'the position and the reference base (hg38 genome).',
+    errNoMane: 'No MANE transcript at this position: the fallback service has nothing to '
+      + 'annotate here, and the variant itself is not at fault. Run the analysis again '
+      + 'once Ensembl answers, or enter the variant as HGVS on the transcript you want — '
+      + 'the fallback then accepts it. ({msg})',
     errNetwork: 'The Ensembl service is briefly unavailable (it returns errors in bursts). Run the analysis again.',
     fallbackSource: 'Normalisation done by {src}: Ensembl too slow or unavailable. Check the transcript and the variant type.',
     fallbackSourceTyped: 'Normalisation done by {src}: Ensembl too slow or unavailable. '

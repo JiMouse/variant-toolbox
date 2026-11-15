@@ -80,6 +80,66 @@ export function mapConsequence(terms = []) {
   return terms[0] || null;
 }
 
+/**
+ * Terme SO représentatif de chaque type — la réciproque de `CONSEQUENCE_MAP`.
+ *
+ * L'encart d'identité affiche les termes rendus par la source (`consequenceTerms`).
+ * Sur le chemin VEP ce sont les termes SO ; le repli n'avait que sa clé interne, et la
+ * ligne « Conséquence » passait de `splice_region_variant, synonymous_variant` à
+ * `synonymous` selon la source. Ces termes rétablissent le même vocabulaire.
+ */
+const SO_TERM = {
+  splice_acceptor: 'splice_acceptor_variant',
+  splice_donor: 'splice_donor_variant',
+  nonsense: 'stop_gained',
+  frameshift: 'frameshift_variant',
+  start_lost: 'start_lost',
+  stop_lost: 'stop_lost',
+  missense: 'missense_variant',
+  synonymous: 'synonymous_variant',
+  splice_region: 'splice_region_variant',
+  intronic: 'intron_variant',
+  utr5: '5_prime_UTR_variant',
+  utr3: '3_prime_UTR_variant',
+  upstream: 'upstream_gene_variant',
+  downstream: 'downstream_gene_variant',
+  noncoding_exon: 'non_coding_transcript_exon_variant',
+  coding: 'coding_sequence_variant',
+};
+
+/**
+ * Termes SO d'un type de variation, dans la langue de VEP.
+ *
+ * VEP en rend souvent **deux** là où le type retenu n'en garde qu'un, et ces seconds
+ * termes sont informatifs : la bordure d'exon d'un synonyme, le caractère intronique
+ * d'une région d'épissage. Ils sont rétablis quand la structure les établit, aux mêmes
+ * seuils qu'elle (voir `consequenceFromStructure`).
+ *
+ * @param {string} varType
+ * @param {{location?: object, ref?: string, alt?: string}} ctx
+ */
+export function soTerms(varType, { location = null, ref = null, alt = null } = {}) {
+  if (!varType) return [];
+  // inframe couvre les deux sens : c'est la longueur des allèles qui tranche.
+  const main = varType === 'inframe'
+    ? (ref && alt && alt.length > ref.length ? 'inframe_insertion' : 'inframe_deletion')
+    : SO_TERM[varType];
+  if (!main) return [varType];
+
+  const terms = [main];
+  if (!location) return terms;
+  // Trois premières ou dernières bases d'un exon : VEP ajoute splice_region_variant.
+  if (location.kind === 'exon' && location.edge === 'edge' && !/splice/.test(main)) {
+    terms.push('splice_region_variant');
+  }
+  // Région d'épissage intronique : VEP ajoute intron_variant (il ne le fait pas pour
+  // un site canonique ±1/±2, qui n'est pas « dans l'intron » mais sur le site).
+  if (location.kind === 'intron' && main === 'splice_region_variant') {
+    terms.push('intron_variant');
+  }
+  return terms;
+}
+
 /** Variation « nulle » au sens de la macro : frameshift, non-sens, site d'épissage ±1/2. */
 export function isNullVariant(varType) {
   return varType === 'frameshift' || varType === 'nonsense'
@@ -280,28 +340,42 @@ export function cPart(hgvs) {
  * aucune phrase du commentaire.
  */
 /**
- * ENST apparié au transcrit RefSeq retenu, lu dans la table MANE (UCSC).
+ * Les deux réponses que la table MANE (UCSC) porte pour une position.
  *
- * L'appariement est reconnu sur `ncbiId`, jamais sur l'ordre des lignes : un gène qui
- * a un transcrit MANE Plus Clinical en rend deux. La version est comparée d'abord
- * telle quelle, puis sans elle — UCSC ne sert que la version courante, et une saisie
- * sur `NM_000546.5` doit continuer d'afficher la ligne (même raison que `pickRecord`,
- * js/structure.js).
+ * `paired` : la ligne du transcrit retenu, reconnue sur `ncbiId` et jamais sur l'ordre
+ * des lignes — un gène qui a un transcrit MANE Plus Clinical en rend deux. La version
+ * est comparée d'abord telle quelle, puis sans elle : UCSC ne sert que la version
+ * courante, et une saisie sur `NM_000546.5` doit continuer d'afficher la ligne (même
+ * raison que `pickRecord`, js/structure.js).
  *
- * `null` dès que l'appariement n'existe pas — transcrit non-MANE, ou UCSC muet : c'est
- * le cas qui justifie encore l'appel à VEP.
+ * `maneRefSeq` : le transcrit **MANE Select du gène**, qu'on cherche précisément quand
+ * le transcrit retenu n'est *pas* celui-là. VEP le rend toujours ; VariantValidator
+ * jamais, et l'encart affichait « non-MANE, MANE = ? ». Le gène est comparé, car
+ * plusieurs gènes peuvent se chevaucher à une même position.
+ *
+ * Fonction pure, testée sur les lignes réelles d'UCSC (tools/test-comment.mjs).
  */
-async function manePairing(variant) {
-  if (!variant.transcript || !variant.chr || !variant.pos) return null;
+export function pickManeRows(rows, transcript, gene) {
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  const acc = transcript ? String(transcript).split('.')[0] : null;
+  const paired = acc
+    ? (list.find((r) => r.ncbiId === transcript)
+      || list.find((r) => String(r.ncbiId || '').split('.')[0] === acc))
+    : null;
+  const geneRow = list.find((r) => r.maneStat === 'MANE Select'
+    && (!gene || r.geneName2 === gene));
+  return {
+    paired: paired && /^ENST/.test(paired.name || '') ? paired : null,
+    maneRefSeq: geneRow ? geneRow.ncbiId || null : null,
+  };
+}
+
+async function maneRows(variant) {
+  if (!variant.chr || !variant.pos) return [];
   try {
-    const rows = await ucscMane(variant.chr, variant.pos);
-    const acc = String(variant.transcript).split('.')[0];
-    const row = rows.find((r) => r.ncbiId === variant.transcript)
-      || rows.find((r) => String(r.ncbiId || '').split('.')[0] === acc);
-    if (!row || !/^ENST/.test(row.name || '')) return null;
-    return { transcript: row.name, stat: row.maneStat || null };
+    return await ucscMane(variant.chr, variant.pos);
   } catch (e) {
-    return null;   // la ligne n'entre dans aucun chiffre : VEP reste le recours
+    return [];   // la ligne n'entre dans aucun chiffre : VEP reste le recours
   }
 }
 
@@ -315,28 +389,53 @@ export async function ensemblTranscript(variant) {
     };
   }
 
-  // Appariement MANE par UCSC, avant d'aller redemander à Ensembl ce que MANE publie.
-  const mane = await manePairing(variant);
-  if (mane) {
-    return {
-      transcript: mane.transcript,
-      hgvsc: c ? `${mane.transcript}:${c}` : null,
-      matched: 'mane',
-      maneStat: mane.stat,
-      source: 'UCSC',
-    };
+  // La table MANE, demandée à UCSC plutôt qu'à Ensembl, répond à deux questions à la
+  // fois. On ne l'interroge que si l'une des deux est encore ouverte : un transcrit
+  // MANE a un ENST apparié à y lire, et un transcrit non-MANE dont on ignore le MANE
+  // Select du gène a ce nom à y lire. Si le transcrit n'est pas MANE **et** que le
+  // MANE du gène est déjà connu (chemin VEP), il n'y a rien à y chercher.
+  let maneRefSeq = null;
+  if (variant.isMane || !variant.maneTranscript) {
+    const { paired, maneRefSeq: refseq } = pickManeRows(
+      await maneRows(variant), variant.transcript, variant.gene,
+    );
+    maneRefSeq = refseq;
+    if (paired) {
+      return {
+        transcript: paired.name,
+        hgvsc: c ? `${paired.name}:${c}` : null,
+        matched: 'mane',
+        maneStat: paired.maneStat || null,
+        maneRefSeq,
+        source: 'UCSC',
+      };
+    }
   }
+
+  /* Pas d'ENST à montrer, mais le nom du transcrit MANE Select du gène, lui, a été lu :
+   * il est rendu seul. L'encart affiche alors la ligne Ensembl en « n.a. » — ce qui est
+   * la vérité — et nomme enfin le MANE du gène. Un échec de VEP continue de remonter
+   * tel quel quand il n'y a rien d'autre à rendre. */
+  const onlyMane = () => (maneRefSeq
+    ? { transcript: null, hgvsc: null, matched: null, maneRefSeq, source: 'UCSC' }
+    : null);
 
   const g = variant.ref && variant.alt
     ? genomicHgvsFromVcf(variant.chr, variant.pos, variant.ref, variant.alt)
     : (variant.genomicHgvs ? String(variant.genomicHgvs).replace(/^chr/, '') : null);
-  if (!g) return null;
+  if (!g) return onlyMane();
 
-  const vep = await vepEnsembl(g);
-  const item = Array.isArray(vep) ? vep[0] : vep;
+  let item;
+  try {
+    const vep = await vepEnsembl(g);
+    item = Array.isArray(vep) ? vep[0] : vep;
+  } catch (e) {
+    if (maneRefSeq) return onlyMane();
+    throw e;
+  }
   const pool = ((item && item.transcript_consequences) || [])
     .filter((t) => /^ENST/.test(t.transcript_id || '') && t.hgvsc);
-  if (!pool.length) return null;
+  if (!pool.length) return onlyMane();
 
   const acc = variant.transcript ? String(variant.transcript).split('.')[0] : null;
   // Sur le cache Ensembl, `mane_select` porte l'accession **RefSeq** : la réciproque
@@ -345,13 +444,14 @@ export async function ensemblTranscript(variant) {
   const sameC = c && pool.find((t) => cPart(t.hgvsc) === c);
   const other = pool.find((t) => t.mane_select) || pool.find((t) => t.canonical) || pool[0];
   const tc = paired || sameC || other;
-  if (!tc) return null;
+  if (!tc) return onlyMane();
 
   return {
     // `hgvsc` porte l'ENST **versionné**, là où `transcript_id` ne l'est pas.
     transcript: String(tc.hgvsc).split(':')[0] || tc.transcript_id,
     hgvsc: tc.hgvsc,
     matched: paired ? 'paired' : (sameC ? 'sameC' : 'other'),
+    maneRefSeq,
   };
 }
 
@@ -406,6 +506,12 @@ function normaliseFailure(causes) {
   const shown = refusals.length ? refusals : causes;
   const err = new Error([...new Set(shown.map(errorText))].join(' · '));
   err.code = refusals.length ? 'VARIANT_REJECTED' : 'SOURCES_UNAVAILABLE';
+  // Troisième cas : le seul refus est l'absence de transcrit MANE à cette position.
+  // Ni panne, ni saisie fautive — c'est le repli qui n'a rien à annoter ici, et le
+  // message doit le dire plutôt que d'envoyer corriger une saisie correcte.
+  if (refusals.length && refusals.every((c) => c && c.code === 'NO_MANE_TRANSCRIPT')) {
+    err.code = 'NO_MANE_TRANSCRIPT';
+  }
   err.causes = causes;
   return err;
 }
@@ -723,6 +829,30 @@ export async function exonTotal(transcript) {
  * Normalise une saisie via VariantValidator, sans Ensembl.
  * @returns {Promise<object>} même forme que normalize(), avec source: 'VariantValidator'
  */
+/**
+ * Refus faute de **transcrit**, à ne pas confondre avec un refus de la variation.
+ *
+ * Le sélecteur `mane_select` ne laisse passer qu'un transcrit MANE Select. Là où le
+ * gène n'en a pas — ARN long non codant, position intergénique, locus en chevauchement
+ * sans MANE — VariantValidator répond qu'il a trouvé des transcrits mais que la
+ * restriction les a tous écartés, ou rend une clé `intergenic_variant_N` sans
+ * nomenclature. Vérifié sur `NC_000011.10:g.1999000G>A` (locus H19/MRPL23), où VEP
+ * annote NR_002196.3 : l'ancien sélecteur `mane` échouait de la même façon.
+ *
+ * La variation peut donc être parfaite. Sans ce code, le message d'erreur envoyait
+ * vérifier « le transcrit, la position et la base de référence » — une faute que
+ * l'utilisateur n'a pas commise. `all` et `raw` ne sont pas une issue : ils sont
+ * dépréciés sur cet endpoint pour une entrée génomique.
+ */
+function noTranscriptError(key, warnings) {
+  const msg = warnings[0] || 'variant non validé';
+  const err = new Error(`VV: ${msg}`);
+  if (/transcript type limitation/i.test(msg) || /^intergenic_variant/i.test(String(key))) {
+    err.code = 'NO_MANE_TRANSCRIPT';
+  }
+  return err;
+}
+
 export async function normalizeViaVariantValidator(parsed) {
   let desc;
   if (parsed.kind === 'hgvs') {
@@ -750,7 +880,7 @@ export async function normalizeViaVariantValidator(parsed) {
   const v = r[key];
   const warnings = v.validation_warnings || [];
   if (!v.hgvs_transcript_variant) {
-    throw new Error(`VV: ${warnings[0] || 'variant non validé'}`);
+    throw noTranscriptError(key, warnings);
   }
 
   const loci = (v.primary_assembly_loci || {}).grch38 || {};
@@ -807,7 +937,8 @@ export async function normalizeViaVariantValidator(parsed) {
     transcriptSelectedBy: parsed.kind === 'hgvs' ? 'input' : 'mane',
     isMane: Boolean(annotations.mane_select),
     maneTranscript: annotations.mane_select ? transcript : null,
-    consequenceTerms: varType ? [varType] : [],
+    // Vocabulaire de VEP dès la normalisation ; la structure les précise ensuite.
+    consequenceTerms: soTerms(varType, { ref: vcf.ref, alt: vcf.alt }),
     varType,
     varTypeNull: isNullVariant(varType),
     variantClass: null,

@@ -7,7 +7,7 @@
 import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js/comment.js';
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
-import { ensemblTranscript } from '../js/variant.js';
+import { ensemblTranscript, pickManeRows, soTerms } from '../js/variant.js';
 import { buildVarTypeCheck } from '../js/annotate.js';
 import { hedge, predictedProtein } from '../js/util.js';
 
@@ -242,6 +242,62 @@ const ens = await ensemblTranscript({
 check('MANE Select : ENST apparié', ens.transcript, 'ENST00000269305.9');
 check('MANE Select : même numérotation c.', ens.hgvsc, 'ENST00000269305.9:c.524G>A');
 check('MANE Select : aucun appel réseau', ens.matched, 'mane');
+
+/* — Table MANE (UCSC) : deux réponses dans la même ligne —
+ *
+ * Lignes réelles de la piste `mane` au locus de CDKN2A, qui en rend deux : un gène à
+ * transcrit MANE Plus Clinical. Le choix se fait sur ncbiId, jamais sur l'ordre. */
+
+const CDKN2A_MANE = [
+  {
+    name: 'ENST00000304494.10', ncbiId: 'NM_000077.5', maneStat: 'MANE Select', geneName2: 'CDKN2A',
+  },
+  {
+    name: 'ENST00000579755.2', ncbiId: 'NM_058195.4', maneStat: 'MANE Plus Clinical', geneName2: 'CDKN2A',
+  },
+];
+
+check('MANE Select : ENST apparié',
+  pickManeRows(CDKN2A_MANE, 'NM_000077.5', 'CDKN2A').paired.name, 'ENST00000304494.10');
+check('MANE Plus Clinical : sa propre ligne, pas la première',
+  pickManeRows(CDKN2A_MANE, 'NM_058195.4', 'CDKN2A').paired.name, 'ENST00000579755.2');
+check('version ancienne : appariement sur l’accession',
+  pickManeRows(CDKN2A_MANE, 'NM_000077.4', 'CDKN2A').paired.name, 'ENST00000304494.10');
+// Le MANE Select du gène est nommé même quand le transcrit retenu n'est pas lui :
+// c'est le cas que le repli laissait à « MANE = ? ».
+check('MANE Select du gène, transcrit non-MANE',
+  pickManeRows(CDKN2A_MANE, 'NM_001195132.1', 'CDKN2A').maneRefSeq, 'NM_000077.5');
+check('transcrit non-MANE : aucun ENST à montrer',
+  pickManeRows(CDKN2A_MANE, 'NM_001195132.1', 'CDKN2A').paired, null);
+// Plusieurs gènes peuvent se chevaucher : le MANE d'un autre gène n'est pas le nôtre.
+check('gène différent : pas de MANE emprunté',
+  pickManeRows(CDKN2A_MANE, 'NM_001400176.1', 'MRPL23').maneRefSeq, null);
+check('aucune ligne', pickManeRows([], 'NM_000077.5', 'CDKN2A').maneRefSeq, null);
+check('lignes absentes', pickManeRows(null, 'NM_000077.5', 'CDKN2A').paired, null);
+
+/* — Termes SO : le repli doit parler la langue de VEP — */
+
+check('faux-sens', soTerms('missense').join(','), 'missense_variant');
+check('non-sens', soTerms('nonsense').join(','), 'stop_gained');
+check('inframe, délétion', soTerms('inframe', { ref: 'ATCT', alt: 'A' }).join(','), 'inframe_deletion');
+check('inframe, insertion', soTerms('inframe', { ref: 'A', alt: 'ATCT' }).join(','), 'inframe_insertion');
+check('5′UTR', soTerms('utr5').join(','), '5_prime_UTR_variant');
+check('aucun type', soTerms(null).join(','), '');
+// VEP rend deux termes sur une bordure d'exon : la ligne « Conséquence » les montrait
+// sur le chemin VEP et pas sur le repli.
+check('synonyme en bordure d’exon',
+  soTerms('synonymous', { location: { kind: 'exon', edge: 'edge' } }).join(','),
+  'synonymous_variant,splice_region_variant');
+check('synonyme à distance de la jonction',
+  soTerms('synonymous', { location: { kind: 'exon', edge: 'inside' } }).join(','),
+  'synonymous_variant');
+check('région d’épissage intronique',
+  soTerms('splice_region', { location: { kind: 'intron', edge: 'splice' } }).join(','),
+  'splice_region_variant,intron_variant');
+// Un site canonique n'est pas « dans l'intron » pour VEP : un seul terme.
+check('site donneur : un seul terme',
+  soTerms('splice_donor', { location: { kind: 'intron', edge: 'canonical' } }).join(','),
+  'splice_donor_variant');
 
 /* — Contrôle du type par l'annotation gnomAD —
  *
