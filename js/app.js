@@ -6,6 +6,9 @@ import { buildComment, buildNomenclature } from './comment.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds } from './structure.js';
+import {
+  findEpisignatures, describeEpisignature, STATE_LABEL, RESEARCH, CONTROLS, WANTED,
+} from './episignatures.js';
 import { UI, t, initialLang } from './i18n.js';
 import { NA, decimal, isNum, round } from './util.js';
 
@@ -173,6 +176,73 @@ function orWait(value, ...sources) {
   return isPending(...sources) ? waitText() : NA;
 }
 
+/* ---------- épisignature Epi2Diag ---------- */
+
+/** Une ligne de détail sous l'étiquette : une information par ligne. */
+function epiLine(text, cls = '') {
+  const p = document.createElement('span');
+  p.className = `epi-line note ${cls}`.trim();
+  p.textContent = text;
+  return p;
+}
+
+/**
+ * L'étiquette « Épisignature Epi2Diag » et ce qu'elle vaut pour cette variation.
+ *
+ * Posée sur la ligne du gène, elle répond à une question que ni ClinVar ni les
+ * prédicteurs ne tranchent : **cette VSI peut-elle être départagée par une
+ * épisignature, et dans quel délai ?** Le détail vient de describeEpisignature
+ * (js/episignatures.js) ; ici, on ne fait que le poser dans le DOM.
+ *
+ * Renvoie `null` quand le gène n'est pas dans la liste : aucune étiquette, aucune
+ * place prise. Une absence n'affirme rien — la liste est celle d'un projet, pas
+ * celle de la littérature entière.
+ */
+function episignatureBox() {
+  const v = ctx.variant;
+  const hits = findEpisignatures(v.gene, v.hgvsc);
+  if (!hits.length) return null;
+
+  // L'étiquette reste sur la ligne du gène ; le détail passe en dessous, en bloc.
+  // Une seule étiquette, même quand deux lignes s'appliquent (ADNP) : elle prend
+  // l'état le plus favorable des deux, et le détail suit ligne par ligne.
+  const order = [RESEARCH, CONTROLS, WANTED];
+  const best = hits.map((e) => e.state).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+  const tag = badge(t(lang, 'epi'), `epi ${STATE_LABEL[best].cls}`);
+  tag.title = t(lang, 'epiTitle');
+
+  const detail = document.createElement('span');
+  detail.className = 'epi-detail';
+
+  if (hits.length > 1) detail.append(epiLine(t(lang, 'epiRegionUnknown'), 'caution'));
+
+  hits.forEach((e) => {
+    const d = describeEpisignature(e, lang);
+    const facts = epiLine(d.facts);
+    // La publication de référence au bout des chiffres : c'est elle qui dit sur quelle
+    // signature ils portent, et la liste ne la donne pas pour toutes les lignes.
+    if (e.pmid) {
+      const a = document.createElement('a');
+      a.href = `https://pubmed.ncbi.nlm.nih.gov/${e.pmid}/`;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = `PMID ${e.pmid}`;
+      facts.append(' · ', a);
+    }
+    detail.append(epiLine(d.state, `epi-state ${d.cls}`), facts);
+    if (d.perimeter) detail.append(epiLine(d.perimeter, 'caution'));
+  });
+
+  // Le projet cherche des témoins positifs : c'est à la lecture d'une classe 4 ou 5
+  // que l'information devient actionnable — c'est cet échantillon-là qui manque.
+  const needs = hits.some((e) => e.state === WANTED || e.state === CONTROLS);
+  if (needs && currentClass() >= 4) detail.append(epiLine(t(lang, 'epiClass45')));
+
+  const frag = document.createDocumentFragment();
+  frag.append(tag, detail);
+  return frag;
+}
+
 function renderIdentity() {
   const v = ctx.variant;
   const maneBox = document.createElement('span');
@@ -192,8 +262,19 @@ function renderIdentity() {
   const ensWait = !ens && isPending('ens');
   const nomen = buildNomenclature(v);
 
+  // La ligne du gène porte l'étiquette Epi2Diag quand le gène en a une : c'est une
+  // propriété du gène, elle se lit donc à côté de son nom.
+  const epi = v.gene ? episignatureBox() : null;
+  let geneCell = v.gene;
+  if (epi) {
+    geneCell = document.createElement('span');
+    const name = document.createElement('span');
+    name.textContent = v.gene;
+    geneCell.append(name, epi);
+  }
+
   kv($('identity'), [
-    [t(lang, 'gene'), v.gene],
+    [t(lang, 'gene'), geneCell],
     [t(lang, 'transcript'), v.transcript, 'mono'],
     [t(lang, 'transcriptEns'), ens
       ? ens.transcript
@@ -826,7 +907,9 @@ $('gnomadVersion').addEventListener('change', () => {
   if (ctx) renderComment();
 });
 
-$('classGroup').addEventListener('change', () => { if (ctx) renderComment(); });
+// L'étiquette Epi2Diag ne dit « le projet recherche des échantillons de classe 4 ou 5 »
+// qu'en face d'une classe 4 ou 5 : l'identité se redessine donc avec le commentaire.
+$('classGroup').addEventListener('change', () => { if (ctx) { renderIdentity(); renderComment(); } });
 $('regenBtn').addEventListener('click', () => { if (ctx) renderComment(); });
 
 /**

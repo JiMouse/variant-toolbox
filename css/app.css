@@ -203,6 +203,25 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .note { color: var(--muted); font-size: 11px; }
 
+/* — Étiquette Epi2Diag —
+   L'étiquette se lit à côté du nom du gène ; son détail (syndrome, témoins,
+   sensibilité, périmètre) passe en dessous, une information par ligne, pour qu'une
+   ligne longue ne pousse pas la nomenclature hors de l'encart. La couleur ne dit
+   qu'une chose : ce qu'on peut faire de la signature aujourd'hui. */
+.badge.epi { margin-left: 6px; }
+.epi-detail { display: block; margin-top: 3px; }
+.epi-line { display: block; margin-top: 2px; line-height: 1.45; }
+.epi-state { font-weight: 600; }
+.epi-state.ready { color: var(--tol); }
+.epi-state.partial { color: var(--warn); }
+.epi-state.wanted { color: var(--muted); }
+.epi-line.caution { color: var(--warn); }
+.epi-line a { color: var(--accent); }
+
+.badge.epi.ready { color: var(--tol); border-color: currentColor; }
+.badge.epi.partial { color: var(--warn); border-color: currentColor; }
+.badge.epi.wanted { color: var(--muted); border-color: var(--muted); }
+
 /* Copie ligne par ligne : chaque nomenclature se recopie seule, dans un champ de
    compte rendu ou dans la barre de recherche d'une base. Le bouton reste visible sans
    survol — il n'y a pas de survol au doigt, et il doit se trouver sans le chercher.

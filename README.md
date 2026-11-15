@@ -214,6 +214,52 @@ UCSC ne sert que la **version courante** de chaque transcrit : une saisie sur
 bornes d'exons peuvent avoir changé. Un désaccord entre le numéro d'exon calculé ici et
 celui de la normalisation est également affiché plutôt que tu.
 
+## Épisignature Epi2Diag
+
+Sur la ligne **Gène** de l'encart d'identité, une étiquette **Épisignature Epi2Diag**
+apparaît quand le gène figure dans la liste des épisignatures suivies par le projet
+[Epi2Diag](https://docs.google.com/forms/d/e/1FAIpQLSe2fOIRUvuwLdnEAwX7u1uLxLzE_WheHeLyKxn5XgxkPrW5mA/viewform)
+— 42 lignes, 42 symboles de gènes, liste de **septembre 2026**. Elle répond à une question que ni
+ClinVar ni les prédicteurs ne tranchent : *cette VSI peut-elle être départagée par une
+épisignature, et dans quel délai ?*
+
+L'étiquette seule ne suffirait pas — une signature validée sur 32 témoins positifs et
+une signature qui attend encore les siens n'autorisent pas la même conclusion. Trois
+lignes la suivent donc : le syndrome et le niveau d'exploitabilité, les chiffres sur
+lesquels il repose, et le périmètre au-delà duquel il cesse de valoir.
+
+| Couleur | État | Lecture |
+|---|---|---|
+| vert | analyse de VSI possible au titre de la recherche | 14 lignes |
+| ocre | analyse possible, témoins positifs complémentaires requis | 22 lignes |
+| gris | témoins positifs nécessaires | 6 lignes — la signature n'est pas encore exploitable |
+
+> **ANKRD11** `Épisignature Epi2Diag`
+> KBG syndrome — analyse de VSI possible au titre de la recherche
+> 23 témoins positifs · sensibilité 91 % · liste Epi2Diag, sept. 2026
+
+Les chiffres sont toujours affichés **avec la date de la liste** : ils bougent à chaque
+témoin positif analysé. En face d'une classe **4 ou 5**, une ligne ajoute que le projet
+recherche des échantillons dans ce gène — c'est à cette lecture-là que l'information
+devient actionnable.
+
+**Périmètre.** Quand la liste borne la validité de la signature, la limite est écrite :
+`SMC1A` faux-sens seulement, `KDM5C` signature inverse dans le linker ARID-PHD1
+N-terminal, `RNU2-2` variation `n.4` seulement, `RNU4-2` signal plus fort pour la
+T-loop. **ADNP** porte deux signatures que la position c. départage — la région
+centrale `c.2000-2340` est exploitable, les extrémités attendent leurs témoins ; une
+variation dont la position c. n'est pas déterminable (intronique, UTR) laisse les deux
+lignes affichées plutôt qu'un périmètre affirmé à tort.
+
+**Symboles.** L'appariement se fait sur le symbole HGNC, alias compris. La feuille écrit
+`KMT6A` en face du syndrome de Kabuki : c'est **KDM6A** qui est retenu — `KMT6A` est le
+synonyme officiel d'*EZH2* (syndrome de Weaver), qui n'a pas de signature dans cette
+liste et n'est donc pas étiqueté. Seize lignes de la feuille ne nomment pas de
+syndrome ; l'étiquette commence alors par l'état.
+
+L'absence d'étiquette **n'affirme rien** : la liste est celle d'un projet, pas celle de
+la littérature entière.
+
 ## Écarts avec la macro
 
 **Corrigé** (demandé par la spécification) — la phrase de conservation.
@@ -314,6 +360,7 @@ reste « discordants » (MTHFR `c.665C>T`).
 ```bash
 node tools/test-comment.mjs                                     # commentaire, sans réseau
 node tools/test-structure.mjs                                   # géométrie exonique, sans réseau
+node tools/test-episignatures.mjs                               # liste Epi2Diag, sans réseau
 node tools/validate.mjs "chr17-7675088-C-T:5"
 node tools/validate.mjs --lang en --links "NM_000546.6:c.524G>A:4"
 node tools/validate.mjs --gnomad v2.1.1 "chr17-7675088-C-T:5"   # comme la macro
@@ -324,7 +371,10 @@ appel réseau. `tools/test-structure.mjs` vérifie la géométrie exonique sur d
 enregistrements UCSC réels des deux brins : numérotation, distances aux jonctions
 (recoupées avec les décalages de la nomenclature HGVS), indels dont la base d'ancrage
 n'est pas touchée, variation à cheval sur une jonction, et décalage de version du
-transcrit. Les passages sur variations réelles sont dans
+transcrit. `tools/test-episignatures.mjs` contrôle la table Epi2Diag recopiée à la
+main — effectifs, sensibilités, répartition par état — l'appariement par alias, le
+départage des deux signatures d'ADNP par la position c., et les phrases rendues en
+FR et EN. Les passages sur variations réelles sont dans
 [docs/validation.md](docs/validation.md), et la comparaison avant/après l'optimisation
 de latence dans [docs/latence.md](docs/latence.md) § 5.
 
@@ -343,12 +393,14 @@ js/annotate.js      chiffres et seuils
 js/comment.js       commentaire FR/EN
 js/links.js         liens
 js/structure.js     structure exonique et distance aux jonctions
+js/episignatures.js liste Epi2Diag : quels gènes ont une épisignature exploitable
 js/schema.js        les deux schémas SVG
 js/i18n.js          libellés de l'interface
 js/app.js           câblage
 tools/validate.mjs  chaîne complète en ligne de commande
 tools/test-comment.mjs  tests du commentaire, sans réseau
 tools/test-structure.mjs  tests de la géométrie exonique, sans réseau
+tools/test-episignatures.mjs  tests de la liste Epi2Diag, sans réseau
 docs/cors.md        tests CORS
 docs/ensembl.md     choix de l'endpoint VEP et solutions de repli
 docs/validation.md  vérifications
