@@ -117,6 +117,63 @@ VariantValidator et donne une sortie **identique** à celle de VEP :
 | CFTR `p.Phe508del` | NM_000492.4 | oui | exon 11/27 | 7-117559590-ATCT-A |
 | BRCA1 `c.5467+1G>A` | NM_007294.4 | oui | intron 22/22 | 17-43047642-C-T |
 
+### Type de variation : repli contre VEP, variation par variation
+
+VariantValidator ne rend pas de terme de conséquence. Le repli le **calcule** sur la
+structure exonique d'UCSC — bornes du CDS pour les UTR, bornes des exons pour
+l'épissage, nomenclature protéique pour le reste (`consequenceFromStructure`,
+js/variant.js). Les deux colonnes ci-dessous sont les deux chemins exécutés sur la même
+saisie, VEP d'un côté, VariantValidator + UCSC de l'autre :
+
+| Saisie | VEP (termes rendus) | Repli | |
+|---|---|---|---|
+| `NM_000546.6:c.524G>A` | missense_variant | missense | = |
+| `NM_000492.4:c.1521_1523del` | inframe_deletion | inframe | = |
+| `NM_000518.5:c.118C>T` | stop_gained | nonsense | = |
+| `NM_007294.4:c.5467+1G>A` | splice_donor_variant | splice_donor | = |
+| `NM_000492.4:c.274-1G>A` | splice_acceptor_variant | splice_acceptor | = |
+| `NM_000492.4:c.1585-1G>A` | splice_acceptor_variant | splice_acceptor | = |
+| `NM_005957.5:c.665C>T` | missense_variant | missense | = |
+| `NM_000059.4:c.9976A>T` | stop_gained | nonsense | = |
+| `NM_007294.4:c.68_69del` | frameshift_variant | frameshift | = |
+| `NM_000492.4:c.1584G>A` | splice_region_variant, synonymous_variant | synonymous | = |
+| `NM_000492.4:c.3717+12191C>T` | intron_variant | intronic | = |
+| `NM_000546.6:c.97-29C>T` | intron_variant | intronic | = |
+| `NM_000546.6:c.-28C>T` | splice_region_variant, 5_prime_UTR_variant | splice_region | = |
+| `NM_000546.6:c.*100G>T` | 3_prime_UTR_variant | utr3 | = |
+| `NM_000546.6:c.1182A>G` | stop_lost | stop_lost | = |
+
+**15 identiques, 0 divergentes.** Les deux dernières lignes sont celles que la lecture
+des seules nomenclatures rendait fausses : `c.-28C>T` était rendu *intronique* (son
+`-28` compte depuis l'ATG, pas depuis une jonction) et `c.1182A>G` *non-sens* alors que
+`p.(Ter394TrpextTer9)` est l'inverse — le codon stop est **perdu** —, ce qui faisait
+écrire au commentaire une perte de fonction qui n'existe pas.
+
+Les deux avant-dernières montrent l'ordre de sévérité, repris de `CONSEQUENCE_MAP` :
+en bordure d'exon, VEP rend *deux* termes et garde le plus sévère. Dans le CDS,
+l'effet protéique passe devant (`c.1584G>A` reste synonyme) ; hors CDS, c'est la région
+d'épissage qui passe devant l'UTR (`c.-28C>T`, première base de l'exon 2). Le repli
+applique le même ordre.
+
+Les **41** vérifications hors réseau correspondantes sont dans `tools/test-structure.mjs`
+(98 au total avec la géométrie exonique, contre 57 auparavant).
+
+### Transcrit du repli : `mane_select` et non `mane`
+
+Sur un gène qui a un transcrit **MANE Plus Clinical**, `mane` renvoie deux entrées et
+la réponse ne dit pas laquelle lire. Mesuré sur CDKN2A, `NC_000009.12:g.21970917C>T` :
+
+| Sélecteur | Entrées rendues |
+|---|---|
+| `mane` | `NM_000077.5:c.442G>A` (MANE Select, p.(Ala148Thr)) **et** `NM_058195.4:c.*86G>A` (MANE Plus Clinical, p.(=)) |
+| `mane_select` | `NM_000077.5:c.442G>A` seule |
+
+Soit, selon la clé retenue, un faux-sens de l'exon 2 ou une variation 3'UTR : deux
+comptes rendus différents pour la même saisie. Une saisie HGVS ne renvoie que le
+transcrit demandé — vérifié sur `NM_001126112.3:c.524G>A`, transcrit non-MANE : une
+seule clé, celle de la saisie. Le repli rend désormais, sur `9-21970917-C-T`,
+`NM_000077.5` — faux-sens, exon 2/3.
+
 Chaîne complète sous panne simulée sur `p.Phe508del` : gnomAD AC 19 237 (AF 1,19 %),
 17 soumissions ClinVar, HGNC 1884, GeneID 1080, UniProt P13569, 2 phénotypes,
 **26 liens actifs, aucune source en échec**, commentaire complet.

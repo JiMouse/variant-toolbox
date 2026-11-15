@@ -52,6 +52,7 @@ retombe silencieusement sur Monarch.
 | Donnée | Source |
 |---|---|
 | Gène, transcrit, conséquence, exon/intron, HGVS c./p./g., MANE | Ensembl VEP REST (`refseq=1`) |
+| Les mêmes, Ensembl en panne | VariantValidator (`mane_select`), le type de variation étant **calculé** sur la structure UCSC |
 | Transcrit Ensembl et nomenclature c. correspondante | apparié par VEP (`mane_select`), ou Ensembl VEP REST sur le cache Ensembl |
 | gnomAD v4.1 exomes + génomes (AC, htz, hmz, AF) | API GraphQL gnomAD |
 | gnomAD v2.1.1 exomes | MyVariant.info (`gnomad_exome`) |
@@ -76,6 +77,17 @@ lancé en parallèle**, la première réponse gagnant la course. La séquence de
 bascule de même sur l'**API REST d'UCSC**. Une analyse qui prenait 103 s pendant un
 épisode de lenteur en prend 1,4. L'interface affiche un compteur d'avancement et
 plafonne chaque étape à 60 s. Mesures et limites : [docs/ensembl.md](docs/ensembl.md).
+
+**Le type de variation du repli n'est pas deviné.** VariantValidator donne tout sauf le
+terme de conséquence. Il était jusqu'ici lu sur les seules nomenclatures, ce qui tenait
+du pari sur les cas de bordure : `c.-28C>T` passait pour intronique alors que son `-28`
+compte depuis l'ATG, et `p.(Ter394TrpextTer9)` pour un non-sens alors que c'est son
+contraire — le codon stop **perdu** —, ce qui ajoutait au commentaire une perte de
+fonction imaginaire. Il est maintenant **calculé** : bornes du CDS pour les UTR, bornes
+des exons pour l'épissage, nomenclature protéique pour le reste. La structure vient
+d'UCSC, déjà demandée pour les schémas — donc sans appel supplémentaire, et sans
+Ensembl. Sur les 15 variations d'épreuve, le type rendu est **identique à celui de
+VEP**, bordures d'exon comprises ([docs/validation.md](docs/validation.md#5-panne-ensembl--repli-vérifié)).
 
 Quand les **deux** sources tombent ensemble — c'est arrivé, Ensembl en HTTP 500 et
 VariantValidator en maintenance — aucune analyse n'est possible : sans gène ni

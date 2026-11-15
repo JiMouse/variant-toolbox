@@ -107,6 +107,8 @@ export const UI = {
       + 'la position et la base de référence (génome hg38).',
     errNetwork: 'Service Ensembl momentanément indisponible (il renvoie des erreurs par salves). Relancer l’analyse.',
     fallbackSource: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. Vérifier le transcrit et le type de variation.',
+    fallbackSourceTyped: 'Normalisation faite par {src} : Ensembl trop lent ou indisponible. '
+      + 'Le type de variation est établi sur la structure exonique du transcrit (UCSC) ; vérifier le transcrit.',
     degradedConsequence: 'Type de variation non déterminé par la source de repli : la phrase correspondante est omise du commentaire.',
     normSource: 'Source de normalisation',
     errGeneric: 'Échec de l’analyse : {msg}',
@@ -270,6 +272,8 @@ export const UI = {
       + 'the position and the reference base (hg38 genome).',
     errNetwork: 'The Ensembl service is briefly unavailable (it returns errors in bursts). Run the analysis again.',
     fallbackSource: 'Normalisation done by {src}: Ensembl too slow or unavailable. Check the transcript and the variant type.',
+    fallbackSourceTyped: 'Normalisation done by {src}: Ensembl too slow or unavailable. '
+      + 'The variant type is established from the exon structure of the transcript (UCSC); check the transcript.',
     degradedConsequence: 'The fallback source could not determine the variant type: that sentence is omitted from the comment.',
     normSource: 'Normalisation source',
     errGeneric: 'Analysis failed: {msg}',

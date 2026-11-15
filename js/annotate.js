@@ -6,7 +6,9 @@ import {
   myVariant, gnomad4, spliceai, intervar, mygene, ncbiGeneId, genenames,
   monarchDiseases, monarchDisease, monarchInheritance, omimGeneMap, mobiDetailsId,
 } from './sources.js';
-import { exonTotal, ensemblTranscript } from './variant.js';
+import {
+  exonTotal, ensemblTranscript, consequenceFromStructure, isNullVariant,
+} from './variant.js';
 import { fetchStructure } from './structure.js';
 import { NA, first, distinct, get, round, isNum, settleAll } from './util.js';
 
@@ -361,6 +363,35 @@ async function geneInfo(variant) {
  * l'interface s'en sert pour afficher une attente là où un « n.a. », qui affirme
  * l'absence de donnée, serait mensonger.
  */
+/**
+ * Type de variation établi sur la structure exonique, quand il n'était que déduit.
+ *
+ * Le repli VariantValidator ne donne pas de terme de conséquence : la normalisation
+ * le lit d'abord sur les seules nomenclatures (`inferConsequence`), ce qui suffit à
+ * l'affichage immédiat de l'identité mais reste un pari sur les cas de bordure. Dès
+ * qu'UCSC a rendu la structure du transcrit — un appel déjà fait pour les schémas,
+ * donc sans coût — le type est **calculé** : bornes du CDS pour les UTR, bornes des
+ * exons pour l'épissage, nomenclature protéique pour le reste.
+ *
+ * Ne touche jamais au chemin VEP, qui donne le terme lui-même.
+ */
+function withStructuralType(variant, struct) {
+  if (variant.varTypeFrom !== 'hgvs' || !struct || !struct.structure || !struct.location) {
+    return variant;
+  }
+  const varType = consequenceFromStructure(struct.structure, struct.location, variant.hgvsp);
+  if (!varType) return variant;
+  return {
+    ...variant,
+    varType,
+    varTypeNull: isNullVariant(varType),
+    consequenceTerms: [varType],
+    varTypeFrom: 'structure',
+    // La phrase de type n'est plus omise : le motif de dégradation disparaît avec elle.
+    degraded: variant.degraded === 'CONSEQUENCE_UNKNOWN' ? null : variant.degraded,
+  };
+}
+
 function assemble(variant, out, errors, pending) {
   const mv = out.mv && !out.mv.__notFound ? out.mv : null;
   const g = out.gene || {};
@@ -375,19 +406,23 @@ function assemble(variant, out, errors, pending) {
   const withExons = total && variant.locNum && !String(variant.locField || '').includes('/')
     ? { ...variant, locField: `${variant.locNum}/${total}` }
     : variant;
+  const typed = withStructuralType(withExons, struct);
 
   /* La structure exonique n'alimente le commentaire que lorsqu'elle porte le total
    * d'exons que la normalisation n'a pas donné — « exon 5 » → « exon 5/11 », le cas du
    * repli VariantValidator. Dans ce cas seul, le commentaire l'attend. Sinon elle n'est
    * que **dessinée** (voir js/schema.js), et la faire attendre retarderait le
    * commentaire de la latence d'UCSC sans changer un mot de son texte. */
-  const structFeedsComment = Boolean(variant.loc && variant.locNum
-    && !String(variant.locField || '').includes('/'));
+  const structFeedsComment = Boolean((variant.loc && variant.locNum
+    && !String(variant.locField || '').includes('/'))
+    // Elle porte aussi le **type** de variation quand il n'est encore que déduit des
+    // nomenclatures : la première phrase du commentaire l'attend donc.
+    || variant.varTypeFrom === 'hgvs');
 
   return {
-    variant: withExons,
+    variant: typed,
     source: variant.source || 'VEP',
-    degraded: variant.degraded || null,
+    degraded: typed.degraded || null,
     pending: [...pending],
     // `ens` n'entre jamais dans le commentaire : le transcrit Ensembl et sa
     // nomenclature c. ne sont affichés que dans l'encart d'identité.

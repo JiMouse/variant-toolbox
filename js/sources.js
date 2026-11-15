@@ -333,7 +333,9 @@ export async function mobiDetailsId(hgvs, apiKey) {
  * numérotation des exons ; quand il tombe, l'application entière tombe.
  * VariantValidator (ACAO *) fournit gène, transcrit, HGVS c./p./g., coordonnées
  * VCF déjà normalisées, indicateur MANE, numéro d'exon, HGNC et GeneID — tout
- * sauf le terme de conséquence, qui est déduit prudemment (voir variant.js).
+ * sauf le terme de conséquence. Celui-ci n'est pas deviné pour autant : il est
+ * calculé sur la structure exonique d'UCSC, déjà demandée pour les schémas (voir
+ * `consequenceFromStructure`, js/variant.js).
  * ------------------------------------------------------------------ */
 
 const VV = 'https://rest.variantvalidator.org/VariantValidator';
@@ -351,8 +353,21 @@ const VV = 'https://rest.variantvalidator.org/VariantValidator';
  * 15 + 0,8 + 15 ≈ 31 s avant que l'analyse rende la main, alors que l'échec était
  * acquis dès la première réponse. Un service en bonne santé répond en ~2,2 s : 12 s
  * laissent 5× cette marge tout en bornant la panne à 12 s au lieu de 31.
+ *
+ * `mane_select` et non `mane` : sur un gène qui a un transcrit **MANE Plus Clinical**,
+ * `mane` renvoie **deux** entrées et la réponse ne dit pas laquelle lire en premier.
+ * Mesuré sur CDKN2A, `NC_000009.12:g.21970917C>T` :
+ *
+ *   mane         → NM_000077.5:c.442G>A  (MANE Select, p.(Ala148Thr))
+ *                  NM_058195.4:c.*86G>A  (MANE Plus Clinical, p.(=))
+ *   mane_select  → NM_000077.5:c.442G>A  seul
+ *
+ * Soit, selon la clé retenue, un faux-sens de l'exon 2 ou une variation 3'UTR : deux
+ * comptes rendus différents pour la même saisie. Une saisie HGVS, elle, ne renvoie que
+ * le transcrit demandé — le sélecteur ne change donc rien à ce cas (vérifié sur
+ * `NM_001126112.3:c.524G>A`, transcrit non-MANE : une seule clé, celle de la saisie).
  */
-export function variantValidator(desc, selectTranscripts = 'mane') {
+export function variantValidator(desc, selectTranscripts = 'mane_select') {
   const url = `${VV}/variantvalidator/GRCh38/${encodeURIComponent(desc)}/${selectTranscripts}`
     + '?content_type=application/json';
   return fetchJSON(url, { retries: 0, timeout: 12000 });

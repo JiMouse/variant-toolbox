@@ -8,6 +8,9 @@
 import {
   variantSpan, exonsFromUcsc, pickRecord, intronBounds, locate,
 } from '../js/structure.js';
+import {
+  consequenceFromStructure, proteinConsequence, inferConsequence,
+} from '../js/variant.js';
 
 let pass = 0;
 let fail = 0;
@@ -182,6 +185,94 @@ check('version ancienne : décalage signalé',
   pickRecord(items, 'NM_000546.5', 7675088).versionMismatch, true);
 check('transcrit absent', pickRecord(items, 'NM_999999.1', 7675088), null);
 check('aucun transcrit', pickRecord([], 'NM_000546.6', 7675088), null);
+
+/* — Type de variation établi sur la structure (repli VariantValidator) —
+ *
+ * Le repli ne donne pas de terme de conséquence. Il est calculé ici à partir des
+ * bornes du CDS, des bornes d'exons et de la nomenclature protéique — et doit
+ * rendre **le même** terme que VEP, y compris sur les bordures.
+ *
+ * TP53 est sur le brin − : son CDS va de 7669609 à 7676594, donc tout ce qui est
+ * au-dessus de 7676594 est en 5'UTR et tout ce qui est en dessous de 7669609 en 3'UTR. */
+
+const type = (st, pos, hgvsp = null, ref = 'C', alt = 'T') =>
+  consequenceFromStructure(st, locate(st, variantSpan({ pos, ref, alt })), hgvsp);
+
+check('TP53 c.524G>A : faux-sens', type(tp53, 7675088, 'NP_000537.3:p.(Arg175His)'), 'missense');
+check('TP53 : non-sens', type(tp53, 7675088, 'NP_000537.3:p.(Arg175Ter)'), 'nonsense');
+check('TP53 : synonyme', type(tp53, 7675088, 'NP_000537.3:p.(=)'), 'synonymous');
+// Le CDS de TP53 commence dans l'exon 2 : l'exon 1 (7687377-7687490) est tout entier
+// en amont de l'ATG, donc 5'UTR — et non « intronique », ce que rendait la lecture
+// des seules nomenclatures sur un c.-14.
+check('TP53 exon 1 : 5′UTR', type(tp53, 7687400, 'NP_000537.3:p.(=)'), 'utr5');
+// Exon 11, sous cdsStart : après le codon stop sur le brin −.
+check('TP53 exon 11 : 3′UTR', type(tp53, 7669000, 'NP_000537.3:p.(=)'), 'utr3');
+check('CFTR exon 1 : 5′UTR (brin +)', type(cftr, 117480050, 'NP_000483.3:p.(=)'), 'utr5');
+// c.-28C>T, première base de l'exon 2 (7676622 sur le brin −) : VEP rend
+// ["splice_region_variant", "5_prime_UTR_variant"], et la région d'épissage l'emporte.
+check('TP53 c.-28C>T : 5′UTR mais en bordure',
+  type(tp53, 7676622, 'NP_000537.3:p.(=)', 'G', 'A'), 'splice_region');
+check('TP53 5′UTR à distance de la jonction',
+  type(tp53, 7676600, 'NP_000537.3:p.(=)'), 'utr5');
+
+// Introns de TP53. Exon 4 = 7675994-7676272, exon 5 = 7675053-7675236 : l'intron 4
+// les sépare (7675237-7675993). Sur le brin −, le donneur de l'exon 4 est sa borne
+// génomique basse et l'accepteur de l'exon 5 sa borne haute.
+check('TP53 intron 4, +1 du donneur', type(tp53, 7675993), 'splice_donor');
+check('TP53 intron 4, +2 du donneur', type(tp53, 7675992), 'splice_donor');
+check('TP53 intron 4, +5 du donneur', type(tp53, 7675989), 'splice_region');
+check('TP53 intron 4, −1 de l’accepteur', type(tp53, 7675237), 'splice_acceptor');
+check('TP53 intron 4, −8 de l’accepteur', type(tp53, 7675244), 'splice_region');
+check('TP53 intron 4, −9 : intronique', type(tp53, 7675245), 'intronic');
+check('TP53 intron 4, profond', type(tp53, 7675600), 'intronic');
+
+// Bordure exonique : VEP place missense_variant avant splice_region_variant, et la
+// première base de l'exon 5 (7675236 sur le brin −) reste donc un faux-sens.
+check('TP53 bordure d’exon : l’effet protéique l’emporte',
+  type(tp53, 7675236, 'NP_000537.3:p.(Thr187Ala)'), 'missense');
+
+// Délétion qui emporte la jonction : le site canonique est détruit.
+check('délétion à cheval sur une jonction',
+  type(tp53, 7675235, 'NP_000537.3:p.?', 'CTTT', 'C'), 'splice_acceptor');
+
+// Transcrit non codant : aucun CDS, donc aucune conséquence protéique possible.
+const nr = exonsFromUcsc({ ...TP53, name: 'NR_000001.1', cdsStart: 7687490, cdsEnd: 7687490 });
+check('transcrit non codant', type(nr, 7675088, null), 'noncoding_exon');
+
+// Dans le CDS mais protéine indéterminée : « variation codante » plutôt que rien.
+check('CDS sans nomenclature protéique', type(tp53, 7675088, null), 'coding');
+check('structure absente', consequenceFromStructure(null, null, 'p.(Arg175His)'), null);
+check('hors du transcrit', type(tp53, 7600000, 'p.(Arg175His)'), null);
+
+/* — Conséquence protéique seule — */
+
+check('frameshift', proteinConsequence('NP_1:p.(Phe508LeufsTer2)'), 'frameshift');
+check('non-sens', proteinConsequence('NP_1:p.(Arg213Ter)'), 'nonsense');
+// p.Ter334Leu est l'inverse d'un non-sens : le codon stop disparaît.
+check('codon stop perdu', proteinConsequence('NP_1:p.(Ter334Leu)'), 'stop_lost');
+check('codon d’initiation', proteinConsequence('NP_1:p.(Met1?)'), 'start_lost');
+check('synonyme', proteinConsequence('NP_1:p.(Gln528=)'), 'synonymous');
+check('synonyme sans résidu', proteinConsequence('NP_1:p.(=)'), 'synonymous');
+check('inframe', proteinConsequence('NP_1:p.(Phe508del)'), 'inframe');
+check('faux-sens', proteinConsequence('NP_1:p.(Arg175His)'), 'missense');
+// L'écriture de VEP, sans parenthèses, doit se lire pareil.
+check('écriture VEP', proteinConsequence('NP_1:p.Arg175His'), 'missense');
+check('protéine indéterminée', proteinConsequence('NP_1:p.?'), null);
+check('pas de nomenclature', proteinConsequence(null), null);
+
+/* — Repli du repli : les nomenclatures seules, quand UCSC ne répond pas — */
+
+check('c.-14C>T : 5′UTR', inferConsequence('NM_1:c.-14C>T', null), 'utr5');
+check('c.*52C>T : 3′UTR', inferConsequence('NM_1:c.*52C>T', null), 'utr3');
+// Un 5'UTR intronique : le décalage l'emporte sur le préfixe.
+check('c.-24+3C>T : région d’épissage', inferConsequence('NM_1:c.-24+3C>T', null), 'splice_region');
+check('c.5467+1G>A : site donneur', inferConsequence('NM_1:c.5467+1G>A', null), 'splice_donor');
+check('c.100-2A>G : site accepteur', inferConsequence('NM_1:c.100-2A>G', null), 'splice_acceptor');
+check('c.5+5G>A : région d’épissage', inferConsequence('NM_1:c.5+5G>A', null), 'splice_region');
+check('c.3717+12191C>T : intronique', inferConsequence('NM_1:c.3717+12191C>T', null), 'intronic');
+check('c.524G>A : lu sur la protéine',
+  inferConsequence('NM_1:c.524G>A', 'NP_1:p.(Arg175His)'), 'missense');
+check('nomenclature illisible', inferConsequence('n’importe quoi', null), null);
 
 /* — Entrées dégradées : rien ne doit lever — */
 

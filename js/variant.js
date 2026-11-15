@@ -9,6 +9,8 @@ import {
   variantValidator, variantValidatorTranscript, NC_ACCESSION,
 } from './sources.js';
 import { hedge, errorText, predictedProtein } from './util.js';
+// Les seuils d'épissage sont définis une seule fois, là où ils sont dessinés.
+import { CANONICAL_BP, SPLICE_INTRON_BP } from './structure.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
 
@@ -488,6 +490,7 @@ export async function normalize(input, { onProgress = null } = {}) {
     domains: tc.domains || [],
     rsid: item.id && /^rs\d+$/.test(item.id) ? item.id : null,
     source: 'VEP',
+    varTypeFrom: 'vep',
     degraded: null,
     vepRaw: item,
   };
@@ -498,32 +501,152 @@ export async function normalize(input, { onProgress = null } = {}) {
  * ------------------------------------------------------------------ */
 
 /**
- * Conséquence déduite des nomenclatures, quand VEP n'est pas joignable.
- * Volontairement prudente : si le motif n'est pas reconnu avec certitude, on
- * renvoie `null` et le commentaire **omet** la phrase de type plutôt que de
- * risquer un type faux. L'interface signale alors la source de repli.
+ * Changement protéique seul : « NP_000537.3:p.(Arg175His) » → « Arg175His ».
+ * Accepte les deux écritures, celle de VEP (nue) et celle de VariantValidator
+ * (entre parenthèses).
+ */
+function proteinChangeOf(hgvsp) {
+  const s = String(hgvsp || '').split(':').pop();
+  const m = s.trim().match(/^p\.\(?(.+?)\)?$/);
+  return m ? m[1].trim() : '';
+}
+
+/**
+ * Conséquence lue sur la **nomenclature protéique**, qui la décrit entièrement :
+ * `fs` dit le décalage du cadre, `Ter` final le codon stop prématuré, `=` l'absence
+ * de changement, `Met1` le codon d'initiation. L'ordre des tests est celui de la
+ * sévérité, car un frameshift se termine lui aussi par `Ter`.
+ *
+ * `Ter` en **tête** du changement (p.Ter334Leu, p.Ter334extTer15) est l'inverse d'un
+ * non-sens : c'est le codon stop qui disparaît. Rendu « non-sens » jusqu'ici, soit la
+ * conclusion opposée sur la perte de fonction.
+ */
+export function proteinConsequence(hgvsp) {
+  const change = proteinChangeOf(hgvsp);
+  if (!change || change === '?') return null;
+  if (/fs/i.test(change)) return 'frameshift';
+  if (/^Met1\b/.test(change)) return 'start_lost';
+  if (/^Ter\d/.test(change)) return 'stop_lost';
+  if (/Ter\d*$/.test(change)) return 'nonsense';
+  if (/^=$|=$/.test(change)) return 'synonymous';
+  if (/del|ins|dup/i.test(change)) return 'inframe';
+  // Faux-sens : trois lettres, position, trois lettres différentes.
+  const mis = change.match(/^([A-Za-z]{3})(\d+)([A-Za-z]{3})$/);
+  if (mis && mis[1] !== mis[3]) return 'missense';
+  return null;
+}
+
+/**
+ * Première position d'une nomenclature c., décomposée.
+ *
+ * La grammaire HGVS est sans ambiguïté : `-` en tête = 5'UTR, `*` en tête = 3'UTR,
+ * et un `+n`/`-n` en queue = décalage intronique. C'est ce découpage qui manquait —
+ * `c.-14C>T`, lu par une expression cherchant « un signe suivi de chiffres », passait
+ * pour intronique alors que son `-14` compte depuis l'ATG.
+ *
+ * @returns {{utr: '5'|'3'|null, offset: number}|null}
+ */
+function parseCPosition(hgvsc) {
+  const s = String(hgvsc || '');
+  const body = s.includes(':') ? s.split(':').slice(1).join(':') : s;
+  const m = body.replace(/^[cnm]\./, '').match(/^([*-])?(\d+)([+-]\d+)?/);
+  if (!m) return null;
+  return {
+    utr: m[1] === '*' ? '3' : (m[1] === '-' ? '5' : null),
+    offset: m[3] ? Number(m[3]) : 0,
+  };
+}
+
+/**
+ * Conséquence déduite des seules nomenclatures — le cas où la structure exonique
+ * n'a pas pu être obtenue (voir `consequenceFromStructure`, qui la supplante).
+ *
+ * Volontairement prudente : si le motif n'est pas reconnu avec certitude, on renvoie
+ * `null` et le commentaire **omet** la phrase de type plutôt que de risquer un type
+ * faux. L'interface signale alors la source de repli.
  */
 export function inferConsequence(hgvsc, hgvsp) {
-  const c = String(hgvsc || '');
-  const p = String(hgvsp || '');
-  const cPart = c.includes(':') ? c.split(':').slice(1).join(':') : c;
+  const pos = parseCPosition(hgvsc);
+  if (!pos) return null;
 
-  // Épissage canonique : ±1 et ±2 d'une bordure d'intron.
-  const splice = cPart.match(/[+-](\d+)[ACGT>_a-z]/);
-  if (/\+[12][ACGT]?>/.test(cPart) || /\+[12]_/.test(cPart)) return 'splice_donor';
-  if (/-[12][ACGT]?>/.test(cPart) || /-[12]_/.test(cPart)) return 'splice_acceptor';
-  if (splice) return 'intronic';
+  if (pos.offset) {
+    const d = Math.abs(pos.offset);
+    if (d <= CANONICAL_BP) return pos.offset > 0 ? 'splice_donor' : 'splice_acceptor';
+    return d <= SPLICE_INTRON_BP ? 'splice_region' : 'intronic';
+  }
+  if (pos.utr === '5') return 'utr5';
+  if (pos.utr === '3') return 'utr3';
+  return proteinConsequence(hgvsp);
+}
 
-  if (/fsTer|fs\b|fs$/i.test(p)) return 'frameshift';
-  if (/Ter\d*\)?$/.test(p) && !/fs/i.test(p)) return 'nonsense';
-  if (/p\.\(?=\)?$|p\.\(?[A-Za-z]{3}\d+=\)?$/.test(p)) return 'synonymous';
-  if (/^p\.\(?Met1\b/.test(p)) return 'start_lost';
-  if (/del$|del\b/.test(cPart) && /del\)?$/.test(p)) return 'inframe';
-  if (/ins/.test(cPart) && /ins/i.test(p)) return 'inframe';
-  // Faux-sens : trois lettres, position, trois lettres différentes.
-  const mis = p.match(/p\.\(?([A-Za-z]{3})(\d+)([A-Za-z]{3})\)?$/);
-  if (mis && mis[1] !== mis[3] && mis[3] !== 'Ter') return 'missense';
-  return null;
+/**
+ * Conséquence établie sur la **structure exonique** du transcrit (UCSC) et la
+ * nomenclature protéique — le chemin normal du repli, où elle n'est plus devinée.
+ *
+ * Les deux moitiés sont complémentaires et aucune n'est heuristique : la structure
+ * situe la variation (intron, bordure, UTR, exon non codant) en comparant ses
+ * coordonnées aux bornes du CDS et des exons ; la nomenclature protéique dit ce qu'il
+ * advient de la protéine quand la variation est dans le CDS. VariantValidator fournit
+ * la seconde, `fetchStructure` la première — toutes deux sans Ensembl.
+ *
+ * L'ordre des cas suit celui de `CONSEQUENCE_MAP`, pour que le type rendu ici soit
+ * **le même** que celui qu'aurait rendu VEP. En particulier une variation exonique à
+ * une ou deux bases d'une jonction reste rendue par son effet protéique — c'est ce
+ * que fait VEP, qui place `missense_variant` avant `splice_region_variant` : sa
+ * proximité de la jonction est dite ailleurs, par le schéma (voir js/structure.js).
+ *
+ * @param {object} structure  sortie de `exonsFromUcsc`
+ * @param {object} location   sortie de `locate`
+ * @param {string} hgvsp      nomenclature protéique, parenthésée ou non
+ */
+export function consequenceFromStructure(structure, location, hgvsp) {
+  if (!structure || !location) return null;
+
+  // La variation emporte une jonction : le site canonique est détruit, quel que soit
+  // ce que devient la protéine.
+  if (location.kind === 'junction') {
+    const sides = location.sides || [];
+    return sides.includes('donor') ? 'splice_donor' : 'splice_acceptor';
+  }
+
+  if (location.kind === 'intron') {
+    const off = location.nearest ? location.nearest.offset : null;
+    if (off === null) return 'intronic';
+    if (off <= CANONICAL_BP) return location.nearest.side === 'donor' ? 'splice_donor' : 'splice_acceptor';
+    return off <= SPLICE_INTRON_BP ? 'splice_region' : 'intronic';
+  }
+
+  if (location.kind !== 'exon') return null;      // hors du transcrit
+
+  // Région de la variation dans le transcrit : UTR, ou exon d'un transcrit non codant
+  // (NR_, sans CDS). `null` = dans le CDS.
+  const region = structure.coding ? utrSide(structure, location.span) : 'noncoding_exon';
+
+  // Hors CDS, la protéine ne dit rien — VariantValidator écrit « p.(=) » pour une
+  // variation 5'UTR comme pour une synonyme — et c'est la bordure d'exon qui prime :
+  // `splice_region_variant` passe avant `5_prime_UTR_variant` dans CONSEQUENCE_MAP.
+  if (region) return location.edge === 'edge' ? 'splice_region' : region;
+
+  // Dans le CDS, l'effet protéique prime à son tour sur la bordure — faux-sens,
+  // non-sens et synonyme sont tous au-dessus de `splice_region_variant`.
+  const protein = proteinConsequence(hgvsp);
+  if (protein) return protein;
+  return location.edge === 'edge' ? 'splice_region' : 'coding';
+}
+
+/**
+ * Côté UTR d'une variation exonique, ou `null` si elle est dans le CDS.
+ *
+ * `cdsStart`/`cdsEnd` sont des bornes **génomiques** croissantes, même sur le brin − :
+ * c'est le brin qui dit laquelle des deux porte l'ATG.
+ */
+function utrSide(st, span) {
+  if (!span) return null;
+  const before = span.end < st.cdsStart;
+  const after = span.start > st.cdsEnd;
+  if (!before && !after) return null;            // à cheval ou dans le CDS
+  if (st.strand === 1) return before ? 'utr5' : 'utr3';
+  return before ? 'utr3' : 'utr5';
 }
 
 /**
@@ -572,7 +695,15 @@ export async function normalizeViaVariantValidator(parsed) {
 
   const r = await variantValidator(desc);
   if (!r) throw new Error('VV: aucune réponse');
-  const key = Object.keys(r).find((k) => k !== 'flag' && k !== 'metadata');
+  // `mane_select` ne renvoie qu'une entrée (voir variantValidator, js/sources.js) ;
+  // le tri reste au cas où plusieurs arriveraient : le transcrit demandé s'il y en a
+  // un, sinon celui marqué MANE Select — jamais la première clé venue, dont l'ordre
+  // ne veut rien dire.
+  const keys = Object.keys(r).filter((k) => k !== 'flag' && k !== 'metadata');
+  const wanted = parsed.kind === 'hgvs' ? parsed.hgvs.split(':')[0].split('.')[0] : null;
+  const key = (wanted && keys.find((k) => k.split(':')[0].split('.')[0] === wanted))
+    || keys.find((k) => ((r[k] || {}).annotations || {}).mane_select)
+    || keys[0];
   if (!key) throw new Error('VV: aucun résultat');
   const v = r[key];
   const warnings = v.validation_warnings || [];
@@ -654,6 +785,9 @@ export async function normalizeViaVariantValidator(parsed) {
     rsid: null,
     hgncId: dbx.hgnc ? String(dbx.hgnc).replace('HGNC:', '') : null,
     ncbiGeneId: dbx.ncbigene ? String(dbx.ncbigene) : null,
+    // Type lu sur les seules nomenclatures : provisoire. La structure exonique le
+    // remplace par un type établi dès qu'UCSC répond (voir assemble, js/annotate.js).
+    varTypeFrom: 'hgvs',
     degraded: varType === null ? 'CONSEQUENCE_UNKNOWN' : null,
     vepRaw: null,
   };

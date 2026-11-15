@@ -797,7 +797,12 @@ async function run() {
     render();
 
     const notes = [];
-    if (ctx.source && ctx.source !== 'VEP') notes.push(t(lang, 'fallbackSource', { src: ctx.source }));
+    if (ctx.source && ctx.source !== 'VEP') {
+      // Deux messages, parce que le repli a deux qualités : le type de variation est
+      // soit établi sur la structure exonique, soit encore déduit des nomenclatures.
+      const typed = ctx.variant && ctx.variant.varTypeFrom === 'structure';
+      notes.push(t(lang, typed ? 'fallbackSourceTyped' : 'fallbackSource', { src: ctx.source }));
+    }
     if (ctx.degraded === 'CONSEQUENCE_UNKNOWN') notes.push(t(lang, 'degradedConsequence'));
     if (ctx.notFoundInMyVariant) notes.push(t(lang, 'notFound'));
     const failed = Object.keys(ctx.errors);
