@@ -3,6 +3,7 @@
 import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
 import { buildComment, buildNomenclature, varTypeLabel } from './comment.js';
+import { buildAcmg, acmgText } from './acmg.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds, exonSkipping } from './structure.js';
@@ -36,6 +37,7 @@ function applyLang() {
   });
   $('variantInput').placeholder = t(lang, 'inputPlaceholder');
   $('copyIdBtn').title = t(lang, 'copyHgvsTitle');
+  $('copyAcmgBtn').title = t(lang, 'acmgCopyTitle');
   $('footNote').textContent = lang === 'fr'
     ? 'Aucune donnée patient n’est transmise : seules les coordonnées de la variation sont envoyées aux services interrogés.'
     : 'No patient data leaves the page: only the variant coordinates are sent to the queried services.';
@@ -328,21 +330,7 @@ function hgvsText() {
 }
 
 function renderNumbers() {
-  const iv = ctx.intervar;
   const cv = ctx.clinvar;
-  const ivText = iv
-    ? `${iv.label}${iv.class ? ` — ${lang === 'fr' ? 'classe' : 'class'} ${iv.class}` : ''}`
-    : (isPending('iv') ? waitText() : NA);
-  const ivNode = document.createElement('span');
-  ivNode.textContent = ivText;
-  if (!iv && isPending('iv')) ivNode.className = 'na pending';
-  if (iv && iv.criteria.length) {
-    const n = document.createElement('span');
-    n.className = 'note';
-    n.textContent = `  ${iv.criteria.join(' ')}`;
-    ivNode.append(n);
-  }
-
   const cvNode = document.createElement('span');
   if (cv.count) {
     cvNode.textContent = `${cv.significance || NA} — ${t(lang, 'clinvarCount', { n: cv.count })}`;
@@ -356,7 +344,8 @@ function renderNumbers() {
   }
 
   kv($('numbers'), [
-    [t(lang, 'intervar'), ivNode],
+    // InterVar n'est plus ici : sa classe et ses critères sont une classification
+    // ACMG, et se lisent donc dans l'encart qui en parle (voir renderAcmg).
     [t(lang, 'clinvar'), cvNode],
     [t(lang, 'domain'), orWait(ctx.domain, 'mv'),
       !ctx.domain && isPending('mv') ? 'na pending' : null],
@@ -412,6 +401,110 @@ function renderPredictions() {
     [t(lang, 'phylop'), { text: `(${c.phylop.range})`, cls: 'na' }, consScore(c.phylop.score)],
     [t(lang, 'phastcons'), { text: `(${c.phastcons.range})`, cls: 'na' }, consScore(c.phastcons.score)],
   ]);
+}
+
+/**
+ * Saut d'exon de la variation courante — calculé une fois, lu deux fois : par le
+ * schéma du transcrit et par PVS1, dont il est l'entrée de l'arbre de décision.
+ */
+function currentSkip() {
+  const s = ctx && ctx.structure;
+  if (!s || !s.structure || !s.location) return null;
+  return exonSkipping(s.structure, s.location);
+}
+
+/** Un titre de sous-liste dans l'encart ACMG. */
+function acmgTitle(key) {
+  const h = document.createElement('h3');
+  h.textContent = t(lang, key);
+  return h;
+}
+
+/** Une ligne libre de l'encart : texte gris, éventuellement en avertissement. */
+function acmgNote(text, cls = 'help') {
+  const p = document.createElement('p');
+  p.className = cls;
+  p.textContent = text;
+  return p;
+}
+
+/**
+ * Encart « Classification ACMG ».
+ *
+ * Trois listes et un contrôle, dans cet ordre, et c'est l'ordre qui porte le sens :
+ * ce que les chiffres étayent, ce que seul le biologiste peut poser, ce qu'aucune
+ * source interrogée ici ne sait dire — puis le verdict automatique d'InterVar, à
+ * titre de contrôle et non de conclusion.
+ *
+ * Aucune classe n'est calculée (voir js/acmg.js) : la seule classe de l'application
+ * reste celle du formulaire, et les deux notes du bas disent pourquoi.
+ */
+function renderAcmg() {
+  const box = $('acmg');
+  box.textContent = '';
+  const { supported, waiting } = buildAcmg(ctx, {
+    lang,
+    gnomadVersion: $('gnomadVersion').value,
+    skip: currentSkip(),
+  });
+
+  // Deux listes, et la frontière compte autant que leur contenu : ce qu'un chiffre
+  // suffit à poser, puis ce qu'il ne fait que suggérer tant que la maladie n'a pas
+  // tranché (voir `crit`, js/acmg.js).
+  const firm = supported.filter((c) => !c.conditional);
+  const conditional = supported.filter((c) => c.conditional);
+  // Le code en clé, le fait en valeur, la réserve en note sous le fait : on ne peut
+  // pas lire le critère sans lire ce qui le porte et ce qui lui manque.
+  const critList = (list) => {
+    const dl = document.createElement('dl');
+    dl.className = 'kv';
+    kv(dl, list.map((c) => [c.code, withNote(c.fact, c.caveat)]));
+    return dl;
+  };
+
+  box.append(acmgTitle('acmgSupportedTitle'));
+  if (firm.length) {
+    box.append(critList(firm));
+  } else if (conditional.length) {
+    box.append(acmgNote(t(lang, 'acmgNoneFirm')));
+  } else {
+    // Rien d'étayé : dire si c'est parce qu'on attend encore, ou parce que les
+    // chiffres sont là et ne portent aucun critère. Les deux ne se valent pas.
+    box.append(acmgNote(waiting.length
+      ? t(lang, 'waitingFor', { src: pendingLabels(waiting) })
+      : t(lang, 'acmgNone'), waiting.length ? 'help pending' : 'help'));
+  }
+  if (conditional.length) {
+    box.append(acmgTitle('acmgConditionalTitle'), critList(conditional));
+  }
+  // Des critères sont posés mais une source manque encore : le dire, sinon la liste
+  // paraît close alors qu'elle peut encore s'allonger.
+  if (supported.length && waiting.length) {
+    box.append(acmgNote(t(lang, 'waitingFor', { src: pendingLabels(waiting) }), 'help pending'));
+  }
+
+  box.append(acmgTitle('acmgManualTitle'), acmgNote(t(lang, 'acmgManual')));
+  box.append(acmgTitle('acmgUnfetchedTitle'), acmgNote(t(lang, 'acmgUnfetched')));
+
+  box.append(acmgTitle('acmgControlTitle'));
+  const iv = ctx.intervar;
+  const ivDl = document.createElement('dl');
+  ivDl.className = 'kv';
+  const ivValue = iv
+    ? withNote(`${iv.label}${iv.class ? ` — ${t(lang, 'classShort')} ${iv.class}` : ''}`,
+      iv.criteria.length ? iv.criteria.join(' ') : null)
+    : (isPending('iv') ? waitText() : NA);
+  kv(ivDl, [[t(lang, 'intervar'), ivValue, iv ? null : (isPending('iv') ? 'na pending' : 'na')]]);
+  box.append(ivDl);
+  // Pas de critère InterVar sur un indel : le service répond un corps vide, et une
+  // ligne « n.a. » sans explication laisserait croire à une panne.
+  if (!iv && !isPending('iv') && ctx.variant.ref && ctx.variant.ref.length !== ctx.variant.alt.length) {
+    box.append(acmgNote(t(lang, 'acmgIntervarNote')));
+  }
+
+  box.append(acmgNote(t(lang, 'acmgNoVerdict'), 'help warn-note'));
+  box.append(acmgNote(t(lang, 'acmgNoPp5')));
+  $('copyAcmgBtn').disabled = supported.length === 0;
 }
 
 function renderPhenotypes() {
@@ -555,7 +648,7 @@ function renderStructure() {
    * variation, celle-ci ce qu'il adviendrait du cadre de lecture si le site atteint
    * faisait sauter son exon. L'exon concerné est nommé parce qu'il n'est pas toujours
    * celui des lignes du dessus — côté accepteur, c'est l'exon suivant. */
-  const skip = exonSkipping(st, loc);
+  const skip = currentSkip();
   if (skip) {
     const ex = t(lang, skip.exons.length === 1 ? 'skipExonOne' : 'skipExonMany',
       { n: skip.exons[0], list: skip.exons.join(', ') });
@@ -698,6 +791,7 @@ function render() {
   renderStructure();
   renderNumbers();
   renderPredictions();
+  renderAcmg();
   renderPhenotypes();
   renderLinks();
   renderComment();
@@ -718,12 +812,14 @@ function render() {
 function clearResults() {
   ctx = null;
   $('results').hidden = true;
-  ['identity', 'structure', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'phenotypes', 'links']
+  ['identity', 'structure', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'acmg',
+    'phenotypes', 'links']
     .forEach((id) => { $(id).textContent = ''; });
   $('comment').value = '';
   $('comment').classList.remove('awaiting');
   $('copyIdBtn').disabled = true;
   $('copyBtn').disabled = true;
+  $('copyAcmgBtn').disabled = true;
   $('regenBtn').disabled = true;
 }
 
@@ -1004,6 +1100,13 @@ async function copyToClipboard(text, btn, idle, done) {
 $('copyBtn').addEventListener('click', () => copyToClipboard(
   $('comment').value, $('copyBtn'), t(lang, 'copy'), t(lang, 'copied'),
 ));
+$('copyAcmgBtn').addEventListener('click', () => {
+  if (!ctx) return;
+  const { supported } = buildAcmg(ctx, {
+    lang, gnomadVersion: $('gnomadVersion').value, skip: currentSkip(),
+  });
+  copyToClipboard(acmgText(supported), $('copyAcmgBtn'), t(lang, 'acmgCopy'), t(lang, 'copied'));
+});
 $('copyIdBtn').addEventListener('click', () => {
   if (ctx) copyToClipboard(hgvsText(), $('copyIdBtn'), t(lang, 'copyHgvs'), t(lang, 'copied'));
 });

@@ -44,3 +44,14 @@ Ensembl est en panne, et `getData/track?track=ncbiRefSeq` pour la structure exon
 transcrit. La requête de piste porte sur **une seule base** — l'API renvoie tout
 enregistrement qui chevauche l'intervalle, donc le transcrit entier avec ses bornes
 d'exons, son CDS et son brin, dès lors que la variation tombe dedans.
+
+**GeneBe** (testé le 16/11/2026). L'API publique `api.genebe.net/cloud/api-public/v1/variant`
+rend les critères ACMG avec leurs modulateurs de force, le score en points de Tavtigian et
+le verdict — sur `17-7675088-C-T` : `PS3, PM1, PM2_Supporting, PM5, PP3_Moderate,
+PP5_Very_Strong`, score 19, *Pathogenic*. Mais elle **refuse les appels navigateur** :
+`403 Invalid CORS request` dès qu'un en-tête `Origin` est présent (vérifié depuis
+`https://jimouse.github.io`), alors que la même requête sans `Origin` répond 200. Elle est
+donc inutilisable depuis une page statique, et n'entre pas dans le panneau
+**Classification ACMG**, qui ne s'appuie que sur les chiffres déjà récupérés. Un proxy la
+rendrait accessible — au prix d'un serveur, que ce projet n'a pas. À noter que son verdict
+s'appuie sur `PP5_Very_Strong`, critère retiré par ClinGen en 2018.

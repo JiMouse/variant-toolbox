@@ -319,6 +319,75 @@ UCSC ne sert que la **version courante** de chaque transcrit : une saisie sur
 bornes d'exons peuvent avoir changé. Un désaccord entre le numéro d'exon calculé ici et
 celui de la normalisation est également affiché plutôt que tu.
 
+## Classification ACMG
+
+Un panneau **Classification ACMG** reprend les chiffres déjà affichés et dit quels
+critères ACMG/AMP ils étayent — avec, à chaque fois, **le chiffre qui les porte et la
+réserve qui reste**. Il ne calcule **aucune classe** : la seule classe de l'application
+est celle que vous posez dans le formulaire.
+
+Quatre listes, et la frontière entre elles porte autant que leur contenu.
+
+1. **Étayés par les chiffres** — le chiffre suffit à poser le critère.
+
+   | Critère | Ce qui le déclenche |
+   |---|---|
+   | `PVS1` | variation nulle (non-sens, frameshift, site ±1/±2), avec la phase du saut d'exon quand la structure la donne — l'entrée même de l'arbre de décision PVS1 |
+   | `PVS1_Moderate` | perte du codon d'initiation, ramenée à « modéré » comme le recommande le ClinGen SVI |
+   | `PM1` | domaine protéique InterPro, sur un faux-sens ou un inframe |
+   | `PM2_Supporting` | absente de gnomAD, ou AC 0 — force ramenée à « supporting » (SVI 2020) |
+   | `PM4` | inframe ou perte du codon stop |
+   | `PP3` / `BP4` | verdict des prédicteurs, celui-là même qui écrit la phrase du commentaire |
+   | `BA1` | fréquence ≥ 5 % — le seul seuil autonome de l'article de 2015 |
+   | `BP7` | synonyme ou intronique profond, SpliceAI sous le seuil **et** base peu conservée |
+
+2. **Suggérés par un chiffre, à trancher sur la maladie** — `BS1` (fréquence ≥ 1 %) et
+   `BS2` (homozygotes de gnomAD sur une maladie récessive). Ces deux-là ne sont **pas**
+   posés, et la séparation vient d'un cas : CFTR `p.Phe508del`, la variation de classe 5
+   la plus fréquente de la mucoviscidose, affiche 1,19 % d'allèles et 58 homozygotes
+   dans gnomAD v4.1. Au seuil conventionnel de 1 %, BS1 se déclenche ; et ces
+   homozygotes sont des patients, non des témoins. Les deux chiffres restent affichés —
+   ils mesurent la fréquence des porteurs — sous une étiquette qui dit ce qu'ils valent.
+
+3. **À poser par le biologiste** — ce qu'aucune base ne sait : `PS2`/`PM6` de novo,
+   `PS3`/`BS3` fonctionnel, `PS4` prévalence, `PM3`/`BP2` phase, `PP1`/`BS4` ségrégation,
+   `PP4` phénotype, `BP5` autre cause trouvée.
+
+4. **Hors des sources interrogées ici** — `PS1`/`PM5` (ClinVar au même acide aminé),
+   `PP2`/`BP1` (contrainte du gène en faux-sens), `BP3` (région répétée). Ces données
+   existent ; l'application ne les demande pas.
+
+Puis un **contrôle automatique** : la classe et les critères d'InterVar, qui étaient
+jusqu'ici dans l'encart « Chiffres ». Contrôle et non conclusion — et InterVar ne traite
+que les substitutions, ce que le panneau dit quand il ne rend rien sur un indel.
+
+**`PP5` et `BP6` ne sont jamais posés** : ClinGen les a retirés en 2018 parce qu'ils
+reclassent ClinVar avec ClinVar. InterVar, lui, les pose encore — c'est une bonne part
+de l'écart quand son verdict est plus tranché que les critères de la première liste.
+
+Un critère n'est posé **que si sa source a répondu** : gnomAD en panne ne doit jamais
+produire un « absente de gnomAD », qui serait PM2 posé sur une panne. Tant qu'une source
+est en vol, le panneau dit laquelle.
+
+Le bouton **Copier les critères** rend une ligne par critère, avec le fait qui le
+porte ; un critère conditionnel y est marqué `(?)`.
+
+### Pourquoi pas une classe calculée
+
+Pondérer ces critères demande la spécification du gène (VCEP ClinGen quand il en existe
+une), le mécanisme de la maladie et souvent le contexte du patient. Les seuils eux-mêmes
+en dépendent : BA1 vaut 1,5 % pour CFTR et 5 % par défaut, BS1 n'a pas de valeur
+générale. Un verdict calculé ici serait une opinion de plus, présentée comme un résultat.
+
+L'encart **Liens** porte un lien vers l'[ACMG Validator de Switzerland
+Omics](https://switzerlandomics.ch/technologies/acmg-validator/), outil de revue
+manuelle critère par critère. Le lien ne peut pas être prérempli : l'application tourne
+entièrement dans le navigateur et n'expose ni API ni paramètre d'URL. Côté API,
+[GeneBe](https://genebe.net/) rend bien des critères ACMG avec leurs modulateurs de
+force et le score en points, mais refuse les appels navigateur (`403 Invalid CORS
+request` dès qu'un en-tête `Origin` est présent, vérifié le 16/11/2026) : inutilisable
+depuis une page statique, voir [docs/cors.md](docs/cors.md).
+
 ## Épisignature Epi2Diag
 
 Sur la ligne **Gène** de l'encart d'identité, une étiquette **Épisignature Epi2Diag**

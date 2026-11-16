@@ -8,6 +8,7 @@ import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
 import { ensemblTranscript, maneSelectOf, parseInput, pickManeRows, soTerms } from '../js/variant.js';
+import { buildAcmg, acmgCodes, acmgText } from '../js/acmg.js';
 import { buildVarTypeCheck } from '../js/annotate.js';
 import { hedge, predictedProtein } from '../js/util.js';
 
@@ -349,7 +350,9 @@ check('aucun libellé vide', empty.join(',') || '—', '—');
 // c'est ce qui manquait quand l'interface affichait « fallbackSource » tel quel.
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const html = read('../index.html');
-const appjs = read('../js/app.js');
+// acmg.js appelle `t` lui-même : ses libellés sont du texte d'interface, et doivent
+// donc être couverts par la même vérification que ceux d'app.js.
+const appjs = read('../js/app.js') + read('../js/acmg.js');
 const used = new Set([
   ...[...html.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]),
   ...[...appjs.matchAll(/\bt\(lang,\s*'([^']+)'/g)].map((m) => m[1]),
@@ -398,6 +401,145 @@ check('MANE Select non codant (H19)',
   maneSelectOf({ mane_select: ['ENST00000414790.11', 'NR_002196.3'] }), 'NR_002196.3');
 check('gène sans MANE Select (MIR21)', maneSelectOf({ symbol: 'MIR21' }), null);
 check('fiche absente', maneSelectOf(null), null);
+
+/* — Critères ACMG : ce que les chiffres étayent, et surtout ce qu'ils n'étayent pas —
+ *
+ * `ctx()` sert de contexte : ni `pending` ni `errors` n'y figurent, donc toutes les
+ * sources sont réputées avoir répondu. Les deux derniers blocs les ajoutent, parce que
+ * c'est là qu'un critère posé à tort ferait le plus de dégâts.
+ */
+const codes = (over = {}, opts = {}) => acmgCodes(buildAcmg(ctx(over), { lang: 'fr', ...opts }).supported);
+const facts = (over = {}, opts = {}) => acmgText(buildAcmg(ctx(over), { lang: 'fr', ...opts }).supported);
+
+// Faux-sens de TP53, absent de gnomAD, dans un domaine, prédicteurs délétères.
+check('faux-sens : domaine, absence, prédicteurs', codes(), 'PM1 PM2_Supporting PP3');
+contains('PM2 nomme la version de gnomAD', facts(), 'PM2_Supporting — absente de gnomAD v4.1');
+contains('PP3 nomme les outils', facts(), 'PP3 — délétère pour CADD, REVEL');
+
+// AC 0 et absence de la base ne se disent pas de la même façon : la première est une
+// réponse de gnomAD sur la variation, la seconde une absence de la variation.
+contains('AC 0 est distingué de l’absence',
+  facts({ gnomad: { 'v4.1': { ac: 0, af: 0 } } }), 'PM2_Supporting — AC 0 dans gnomAD v4.1');
+
+// Fréquence : BA1 au-delà de 5 %, BS1 au-delà de 1 %, et rien entre les deux.
+check('BA1 au-delà de 5 %', codes({ gnomad: { 'v4.1': { ac: 513548, af: 0.3182 } } }),
+  'PM1 BA1 PP3');
+check('BS1 au-delà de 1 %', codes({ gnomad: { 'v4.1': { ac: 500, af: 0.02 } } }),
+  'PM1 BS1 PP3');
+check('ni PM2 ni BA1/BS1 entre les deux',
+  codes({ gnomad: { 'v4.1': { ac: 7, af: 0.000004 } } }), 'PM1 PP3');
+contains('BA1 nomme la fréquence',
+  facts({ gnomad: { 'v4.1': { ac: 513548, af: 0.3182 } } }), 'fréquence 31,82 % dans gnomAD v4.1');
+
+// BS2 : un homozygote ne vaut argument que si la maladie est récessive.
+const homAR = {
+  gnomad: { 'v4.1': { ac: 513548, af: 0.3182, hom: 87723 } },
+  phenotypes: { source: 'Monarch', phenotypes: [{ name: 'homocystinurie', inheritance: 'AR' }] },
+};
+contains('BS2 sur une maladie récessive', facts(homAR), 'BS2 (?) — 87723 homozygotes dans gnomAD v4.1');
+check('pas de BS2 sur une maladie dominante', codes({
+  ...homAR,
+  phenotypes: { source: 'Monarch', phenotypes: [{ name: 'Li-Fraumeni', inheritance: 'AD' }] },
+}), 'PM1 BA1 PP3');
+check('pas de BS2 sans homozygote', codes({
+  ...homAR, gnomad: { 'v4.1': { ac: 513548, af: 0.3182, hom: 0 } },
+}), 'PM1 BA1 PP3');
+
+// PVS1 : variation nulle, et la phase du saut d'exon quand elle est connue.
+const nullVariant = {
+  variant: { varType: 'nonsense', varTypeNull: true, locNum: '50', locField: '50/58' },
+  domain: null,
+};
+check('PVS1 sur une variation nulle', codes(nullVariant), 'PVS1 PM2_Supporting PP3');
+contains('PVS1 porte le type et la localisation', facts(nullVariant),
+  'PVS1 — variation non-sens, exon 50/58');
+contains('PVS1 porte la phase du saut',
+  acmgText(buildAcmg(ctx(nullVariant), {
+    lang: 'fr', skip: { exons: [5], coding: 184, inFrame: false, carries: [], certain: true },
+  }).supported), 'saut de l’exon 5 hors phase');
+contains('PVS1 dit le codon d’initiation emporté',
+  acmgText(buildAcmg(ctx(nullVariant), {
+    lang: 'fr', skip: { exons: [1], coding: 53, inFrame: false, carries: ['start'], certain: true },
+  }).supported), 'saut de l’exon 1 emportant le codon d’initiation');
+// Le codon d'initiation perdu n'est pas une variation nulle au sens de la macro : son
+// PVS1 est ramené à modéré, comme le recommande le SVI.
+check('codon d’initiation : PVS1 modéré',
+  codes({ variant: { varType: 'start_lost', varTypeNull: false }, domain: null }),
+  'PVS1_Moderate PM2_Supporting PP3');
+
+// BP7 : les trois conditions de l'article, et aucune devinée.
+const silent = {
+  variant: { varType: 'synonymous', varTypeNull: false },
+  domain: null,
+  predictions: [pred('SpliceAI', 'tol', 0.01), pred('CADD', 'tol', 3)],
+  conservation: { gerp: { score: '1.2', raw: 1.2, conserved: false } },
+};
+check('BP7 : synonyme, SpliceAI bas, base peu conservée', codes(silent),
+  'PM2_Supporting BP4 BP7');
+contains('BP7 porte ses trois chiffres', facts(silent),
+  'BP7 — variation synonyme, SpliceAI 0.01, GERP 1.2');
+check('pas de BP7 sur une base conservée', codes({
+  ...silent, conservation: { gerp: { score: '5.4', raw: 5.4, conserved: true } },
+}), 'PM2_Supporting BP4');
+// Une conservation inconnue n'est pas une conservation faible.
+check('pas de BP7 sans GERP', codes({
+  ...silent, conservation: { gerp: { score: 'n.a.', raw: null, conserved: null } },
+}), 'PM2_Supporting BP4');
+check('pas de BP7 si SpliceAI est délétère', codes({
+  ...silent, predictions: [pred('SpliceAI', 'del', 0.93), pred('CADD', 'del', 25)],
+}), 'PM2_Supporting PP3');
+
+/* — Étayé ou conditionnel : la frontière, éprouvée sur CFTR p.Phe508del —
+ *
+ * La variation de classe 5 la plus fréquente de la mucoviscidose a 1,19 % d'allèles et
+ * 58 homozygotes dans gnomAD v4.1. Au seuil conventionnel de 1 %, BS1 se déclenche et
+ * les homozygotes sont des patients : ces deux critères-là ne doivent jamais paraître
+ * comme posés par le chiffre. */
+const f508 = buildAcmg(ctx({
+  variant: { gene: 'CFTR', varType: 'inframe', varTypeNull: false, ref: 'ATCT', alt: 'A' },
+  domain: null,
+  gnomad: { 'v4.1': { ac: 19237, af: 0.011931, hom: 58 } },
+  phenotypes: { source: 'Monarch', phenotypes: [{ name: 'mucoviscidose', inheritance: 'AR' }] },
+  predictions: [pred('CADD', 'del', 32), pred('SpliceAI', 'tol', 0.01)],
+}), { lang: 'fr' });
+const firm = (r) => r.supported.filter((c) => !c.conditional).map((c) => c.code).join(' ');
+const cond = (r) => r.supported.filter((c) => c.conditional).map((c) => c.code).join(' ');
+check('p.Phe508del : seul PM4 est posé par le chiffre', firm(f508), 'PM4');
+check('p.Phe508del : BS1 et BS2 restent conditionnels', cond(f508), 'BS1 BS2');
+check('le texte copié marque les critères conditionnels',
+  acmgText(f508.supported).includes('BS1 (?) —'), true);
+check('et ne marque pas les autres', acmgText(f508.supported).includes('PM4 —'), true);
+// BA1 est autonome dans l'article de 2015 : au-delà de 5 %, le chiffre suffit.
+check('BA1 n’est pas conditionnel',
+  firm(buildAcmg(ctx({ gnomad: { 'v4.1': { ac: 513548, af: 0.3182 } }, domain: null }), { lang: 'fr' })),
+  'BA1 PP3');
+
+// PM4 : changement de longueur de la protéine.
+check('PM4 sur un inframe', codes({
+  variant: { varType: 'inframe', varTypeNull: false, ref: 'ATCT', alt: 'A' }, domain: null,
+}), 'PM4 PM2_Supporting PP3');
+
+/* — Une source qui n'a pas répondu n'étaye rien, et une source en panne non plus —
+ *
+ * C'est la règle qui compte le plus : « absente de gnomAD » posé sur une panne de
+ * gnomAD, c'est PM2 inventé. */
+const vol = buildAcmg({ ...ctx(), pending: ['g4'] }, { lang: 'fr' });
+check('gnomAD en vol : aucun critère de fréquence', acmgCodes(vol.supported), 'PM1 PP3');
+check('gnomAD en vol : la source est signalée', vol.waiting.join(','), 'g4');
+const down = buildAcmg({ ...ctx(), errors: { g4: new Error('503') } }, { lang: 'fr' });
+check('gnomAD en panne : aucun critère de fréquence', acmgCodes(down.supported), 'PM1 PP3');
+const noSplice = buildAcmg({ ...ctx(), pending: ['splice'] }, { lang: 'fr' });
+check('SpliceAI en vol : pas de verdict de prédicteurs', acmgCodes(noSplice.supported),
+  'PM1 PM2_Supporting');
+// Sans coordonnées VCF, gnomAD n'a pas été interrogé du tout.
+check('sans coordonnées : aucun critère de fréquence',
+  codes({ variant: { ref: null, alt: null } }), 'PM1 PP3');
+
+// Les deux langues disent la même chose, et toutes les clés existent (vérifié plus haut).
+contains('EN : PM2', acmgText(buildAcmg(ctx(), { lang: 'en' }).supported),
+  'PM2_Supporting — absent from gnomAD v4.1');
+contains('EN : PP3', acmgText(buildAcmg(ctx(), { lang: 'en' }).supported),
+  'PP3 — deleterious for CADD, REVEL');
 
 /* — Course entre source principale et repli — */
 const later = (v, ms) => () => new Promise((r) => setTimeout(() => r(v), ms));

@@ -145,6 +145,71 @@ export const UI = {
     commentPending: 'Le commentaire est rédigé quand toutes les sources ont répondu — '
       + 'une version partielle annoncerait des absences non vérifiées.\n\nEn attente de : {src}',
     waitingFor: 'en attente : {src}',
+    /* Classification ACMG — voir js/acmg.js. L'encart rend les critères que les
+     * chiffres étayent, chacun avec son fait et sa réserve, puis dit tout ce qu'il
+     * ne peut pas étayer. Aucune classe n'y est calculée. */
+    classShort: 'classe',
+    acmg: 'Classification ACMG',
+    acmgCopy: 'Copier les critères',
+    acmgCopyTitle: 'Copier les critères étayés, un par ligne, avec le fait qui les porte',
+    acmgSupportedTitle: 'Étayés par les chiffres',
+    acmgNone: 'Aucun critère n’est étayé par les chiffres récupérés — ce qui ne veut pas '
+      + 'dire qu’il n’y en a pas : voir ci-dessous.',
+    acmgConditionalTitle: 'Suggérés par un chiffre, à trancher sur la maladie',
+    acmgNoneFirm: 'Aucun critère n’est posé par un chiffre à lui seul.',
+    acmgManualTitle: 'À poser par le biologiste',
+    acmgManual: 'PS2/PM6 de novo · PS3/BS3 étude fonctionnelle · PS4 prévalence '
+      + 'cas/témoins · PM3/BP2 phase avec une autre variation · PP1/BS4 ségrégation · '
+      + 'PP4 phénotype spécifique du gène · BP5 autre cause moléculaire trouvée',
+    acmgUnfetchedTitle: 'Hors des sources interrogées ici',
+    acmgUnfetched: 'PS1/PM5 (ClinVar au même acide aminé) · PP2/BP1 (contrainte du gène '
+      + 'en faux-sens) · BP3 (région répétée)',
+    acmgControlTitle: 'Contrôle automatique',
+    acmgNoVerdict: 'Aucune classe n’est calculée ici : pondérer ces critères demande la '
+      + 'spécification du gène (VCEP ClinGen s’il en existe une), le mécanisme de la '
+      + 'maladie et le contexte du patient. La classe reste celle que vous posez.',
+    acmgNoPp5: 'PP5 et BP6 ne sont jamais posés ici : ClinGen les a retirés en 2018, parce '
+      + 'qu’ils reclassent ClinVar avec ClinVar. InterVar, lui, les pose encore — d’où un '
+      + 'verdict parfois plus tranché que les critères ci-dessus. La soumission ClinVar se '
+      + 'lit à sa ligne, dans les chiffres.',
+    acmgIntervarNote: 'InterVar ne traite que les substitutions : sur un indel, il ne '
+      + 'rend rien.',
+    // Les faits qui portent un critère.
+    acmgWhyStartLost: 'perte du codon d’initiation',
+    acmgWhyDomain: 'domaine InterPro : {d}',
+    acmgWhyAbsent: 'absente de gnomAD {v}',
+    acmgWhyAc0: 'AC 0 dans gnomAD {v}',
+    acmgWhyFreq: 'fréquence {f} dans gnomAD {v}',
+    acmgWhyHom: '{n} homozygotes dans gnomAD {v}, maladie récessive',
+    acmgWhyDel: 'délétère pour {list}',
+    acmgWhyTol: 'toléré pour {list}',
+    acmgWhySilent: '{type}, SpliceAI {s}, GERP {g}',
+    acmgSkipOfOne: 'de l’exon {n}',
+    acmgSkipOfMany: 'des exons {list}',
+    acmgSkipInFrame: 'saut {ex} en phase',
+    acmgSkipOutFrame: 'saut {ex} hors phase',
+    acmgSkipCarries: 'saut {ex} emportant {what}',
+    // Les réserves qui restent, critère par critère.
+    acmgNotePVS1: 'sous réserve que la perte de fonction soit un mécanisme établi de ce '
+      + 'gène, et de l’arbre de décision PVS1 (NMD, dernier exon, site alternatif)',
+    acmgNoteStartLost: 'ramené à « modéré » par ClinGen SVI : un ATG en aval peut '
+      + 'reprendre la lecture',
+    acmgNotePM1: 'point chaud mutationnel et absence de variation bénigne dans le '
+      + 'domaine : non vérifiés ici',
+    acmgNotePM2: 'ramené à « supporting » par ClinGen SVI ; sur une maladie récessive, '
+      + 'c’est une fréquence basse qui compte, pas l’absence',
+    acmgNotePM4: 'hors région répétée : non vérifié ici',
+    acmgNoteBA1: 'BA1 se juge sur une population précise, et c’est ici la fréquence '
+      + 'globale ; ClinGen tient une liste d’exceptions par gène',
+    acmgNoteBS1: 'le seuil dépend de la maladie (prévalence, pénétrance, hétérogénéité) : '
+      + '1 % n’est qu’une convention',
+    acmgNoteBS2: 'gnomAD écarte les maladies pédiatriques sévères mais n’est pas '
+      + 'phénotypé : sur une maladie fréquente ou compatible avec l’âge adulte, ces '
+      + 'homozygotes peuvent être des patients',
+    acmgNotePred: 'la force se lit sur un prédicteur calibré et ses seuils (REVEL, '
+      + 'BayesDel), pas sur le décompte des outils',
+    acmgNoteBP7: 'BP7 ne couvre pas une base de bordure d’exon : la position dans l’exon '
+      + 'se lit sous « Structure exonique »',
     structure: 'Structure exonique',
     schemaGene: 'Transcrit',
     schemaZoom: 'Zoom sur la jonction la plus proche',
@@ -356,6 +421,66 @@ export const UI = {
     commentPending: 'The comment is written once every source has answered — '
       + 'a partial version would state absences that have not been checked.\n\nWaiting for: {src}',
     waitingFor: 'waiting: {src}',
+    classShort: 'class',
+    acmg: 'ACMG classification',
+    acmgCopy: 'Copy the criteria',
+    acmgCopyTitle: 'Copy the supported criteria, one per line, with the fact behind each',
+    acmgSupportedTitle: 'Supported by the figures',
+    acmgNone: 'No criterion is supported by the figures retrieved — which does not mean '
+      + 'there is none: see below.',
+    acmgConditionalTitle: 'Suggested by a figure, to be settled against the disease',
+    acmgNoneFirm: 'No criterion is set by a figure on its own.',
+    acmgManualTitle: 'For the reporting scientist to set',
+    acmgManual: 'PS2/PM6 de novo · PS3/BS3 functional study · PS4 case/control '
+      + 'prevalence · PM3/BP2 phase with another variant · PP1/BS4 segregation · '
+      + 'PP4 phenotype specific to the gene · BP5 alternate molecular cause found',
+    acmgUnfetchedTitle: 'Outside the sources queried here',
+    acmgUnfetched: 'PS1/PM5 (ClinVar at the same amino acid) · PP2/BP1 (gene missense '
+      + 'constraint) · BP3 (repeat region)',
+    acmgControlTitle: 'Automated control',
+    acmgNoVerdict: 'No class is computed here: weighting these criteria requires the '
+      + 'gene specification (a ClinGen VCEP where one exists), the disease mechanism and '
+      + 'the patient context. The class stays the one you set.',
+    acmgNoPp5: 'PP5 and BP6 are never set here: ClinGen retired them in 2018, because they '
+      + 'reclassify ClinVar with ClinVar. InterVar still sets them — hence a verdict '
+      + 'sometimes firmer than the criteria above. The ClinVar submission is on its own '
+      + 'line, in the figures.',
+    acmgIntervarNote: 'InterVar only handles substitutions: on an indel it returns '
+      + 'nothing.',
+    acmgWhyStartLost: 'initiation codon lost',
+    acmgWhyDomain: 'InterPro domain: {d}',
+    acmgWhyAbsent: 'absent from gnomAD {v}',
+    acmgWhyAc0: 'AC 0 in gnomAD {v}',
+    acmgWhyFreq: 'frequency {f} in gnomAD {v}',
+    acmgWhyHom: '{n} homozygotes in gnomAD {v}, recessive disease',
+    acmgWhyDel: 'deleterious for {list}',
+    acmgWhyTol: 'tolerated for {list}',
+    acmgWhySilent: '{type}, SpliceAI {s}, GERP {g}',
+    acmgSkipOfOne: 'of exon {n}',
+    acmgSkipOfMany: 'of exons {list}',
+    acmgSkipInFrame: 'skip {ex} in frame',
+    acmgSkipOutFrame: 'skip {ex} out of frame',
+    acmgSkipCarries: 'skip {ex} carrying {what}',
+    acmgNotePVS1: 'provided loss of function is an established mechanism for this gene, '
+      + 'and subject to the PVS1 decision tree (NMD, last exon, alternative site)',
+    acmgNoteStartLost: 'downgraded to moderate by ClinGen SVI: a downstream ATG may take '
+      + 'over translation',
+    acmgNotePM1: 'mutational hot spot and absence of benign variation in the domain: not '
+      + 'checked here',
+    acmgNotePM2: 'downgraded to supporting by ClinGen SVI; for a recessive disease what '
+      + 'counts is a low frequency, not absence',
+    acmgNotePM4: 'outside a repeat region: not checked here',
+    acmgNoteBA1: 'BA1 is judged on a specific population, and this is the global '
+      + 'frequency; ClinGen maintains a per-gene exception list',
+    acmgNoteBS1: 'the threshold depends on the disease (prevalence, penetrance, '
+      + 'heterogeneity): 1 % is only a convention',
+    acmgNoteBS2: 'gnomAD screens out severe paediatric disease but is not phenotyped: in a '
+      + 'common disease, or one compatible with adulthood, those homozygotes may be '
+      + 'patients',
+    acmgNotePred: 'strength comes from one calibrated predictor and its thresholds '
+      + '(REVEL, BayesDel), not from counting tools',
+    acmgNoteBP7: 'BP7 does not cover a base at an exon border: the position within the '
+      + 'exon is shown under "Exon structure"',
     structure: 'Exon structure',
     schemaGene: 'Transcript',
     schemaZoom: 'Zoom on the nearest junction',

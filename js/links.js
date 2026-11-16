@@ -81,6 +81,12 @@ export function buildLinks(ctx, opts = {}) {
     L('intervar', 'InterVar', ref
       ? `https://wintervar.wglab.org/results.pos.php?queryType=position&chr=${chr}&pos=${pos}&ref=${ref}&alt=${alt}&build=hg38`
       : null, 'variant'),
+    // Revue ACMG critère par critère, à la main. L'application tourne dans le
+    // navigateur et n'expose ni API ni paramètre d'URL : le lien ne peut pas porter la
+    // variation, et la note le dit plutôt que de laisser croire à un lien contextuel.
+    L('acmgValidator', 'ACMG Validator',
+      'https://switzerlandomics.ch/technologies/acmg-validator/', 'variant',
+      lang === 'fr' ? 'revue manuelle, non préremplie' : 'manual review, not pre-filled'),
 
     // — Populations
     L('gnomad4', 'gnomAD r4', vcf

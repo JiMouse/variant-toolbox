@@ -284,3 +284,38 @@ course VEP/VariantValidator : les deux sources reçoivent alors la **même** nom
 sur le **même** transcrit, au lieu de laisser chacune choisir sur quel transcrit compter
 la position c. — ce qui ferait désigner deux variations différentes à la même saisie
 selon le service qui gagne la course.
+
+## 7. Classification ACMG : ce que les chiffres étayent
+
+Le panneau ne calcule aucune classe ; ce qu'on vérifie ici, c'est que chaque critère est
+posé sur le bon chiffre, et surtout qu'aucun ne l'est sans chiffre (16/11/2026,
+application servie en local et DOM relu hors écran).
+
+| Saisie | Étayés par les chiffres | À trancher sur la maladie |
+|---|---|---|
+| TP53 `chr17-7675088-C-T` (faux-sens) | `PM1` domaine InterPro p53, DNA-binding domain · `PP3` délétère pour SIFT, PolyPhen-2, CADD, REVEL, MetaLR, AlphaMissense | — |
+| TP53 `NM_000546.6:c.376-1G>A` (site accepteur) | `PVS1` variation au niveau du site accepteur, intron 4/10, **saut de l'exon 5 hors phase** · `PP3` | — |
+| MTHFR `c.665C>T` | `BA1` fréquence 31,8214 % | `BS2` 87 723 homozygotes, maladie récessive |
+| CFTR `NM_000492.4:c.1521_1523del` | `PM4` inframe de 3 nucléotides | `BS1` 1,1931 % · `BS2` 58 homozygotes |
+
+La dernière ligne est la raison d'être de la seconde colonne : `p.Phe508del` est de
+classe 5, et au seuil conventionnel de 1 % elle déclenche BS1 pendant que ses homozygotes
+de gnomAD sont des patients. Annoncer « BS1 BS2 étayés » sur cette variation serait une
+faute ; montrer les deux chiffres sous l'étiquette qui dit ce qu'ils valent ne l'est pas.
+
+Les refus, qui comptent autant que les critères posés (vérifiés hors réseau,
+tools/test-comment.mjs) :
+
+| Situation | Ce que rend le panneau |
+|---|---|
+| gnomAD encore en vol | aucun critère de fréquence, et la source est nommée en attente |
+| gnomAD en panne (503) | aucun critère de fréquence — un « absente de gnomAD » serait PM2 posé sur une panne |
+| SpliceAI en vol | aucun verdict de prédicteurs : il peut encore retourner |
+| variation sans coordonnées VCF | aucun critère de fréquence : gnomAD n'a pas été interrogé |
+| GERP absent | pas de `BP7` : une conservation inconnue n'est pas une conservation faible |
+| base conservée, ou SpliceAI délétère | pas de `BP7` |
+| maladie dominante, ou aucun homozygote | pas de `BS2` |
+| indel | `InterVar` en n.a., avec la raison : le service ne traite que les substitutions |
+
+29 vérifications hors réseau de plus dans test-comment.mjs (162), dont la frontière
+étayé/conditionnel sur `p.Phe508del` et les deux langues.
