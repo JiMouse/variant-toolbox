@@ -238,14 +238,82 @@ export function buildAcmg(ctx, { lang = 'fr', gnomadVersion = 'v4.1', skip = nul
   return { supported, waiting };
 }
 
+/**
+ * Les critères qu'aucun chiffre d'ici ne peut poser — rangés selon le plan du
+ * référentiel **ANPGM / Réseau NGS-Diag** (NGSDIAG_001, version 2), et non selon la
+ * numérotation de l'article de 2015.
+ *
+ * C'est le plan dans lequel le compte rendu se rédige en France : la fréquence chez
+ * les patients, les critères cliniques, la co-occurrence, la ségrégation, la longueur
+ * de la protéine, le type et le contexte, la localisation, les prédictions, les données
+ * fonctionnelles. Ranger les cases à cocher dans cet ordre-là, c'est les relire dans
+ * l'ordre où le dossier se constitue, plutôt que dans celui d'une table de codes.
+ *
+ * Les prédictions bio-informatiques y gardent leur place sans aucune case : elles sont
+ * déjà étayées plus haut, par les outils que l'application interroge. Un titre sans
+ * case dit cela mieux qu'un titre absent, qui laisserait croire à un oubli.
+ */
+export const TO_SPECIFY = [
+  { topic: 'acmgTopicPatientFreq', criteria: [{ code: 'PS4', label: 'acmgCritPS4' }] },
+  {
+    topic: 'acmgTopicClinical',
+    criteria: [
+      { code: 'PP4', label: 'acmgCritPP4' },
+      { code: 'BP5', label: 'acmgCritBP5' },
+    ],
+  },
+  {
+    topic: 'acmgTopicCooccurrence',
+    criteria: [
+      { code: 'PM3', label: 'acmgCritPM3' },
+      { code: 'BP2', label: 'acmgCritBP2' },
+    ],
+  },
+  {
+    topic: 'acmgTopicSegregation',
+    criteria: [
+      { code: 'PS2', label: 'acmgCritPS2' },
+      { code: 'PM6', label: 'acmgCritPM6' },
+      { code: 'PP1', label: 'acmgCritPP1' },
+      { code: 'BS4', label: 'acmgCritBS4' },
+    ],
+  },
+  { topic: 'acmgTopicLength', criteria: [{ code: 'BP3', label: 'acmgCritBP3' }] },
+  {
+    topic: 'acmgTopicTypeContext',
+    criteria: [
+      { code: 'PP2', label: 'acmgCritPP2' },
+      { code: 'BP1', label: 'acmgCritBP1' },
+    ],
+  },
+  {
+    topic: 'acmgTopicLocation',
+    criteria: [
+      { code: 'PS1', label: 'acmgCritPS1' },
+      { code: 'PM5', label: 'acmgCritPM5' },
+    ],
+  },
+  { topic: 'acmgTopicPredictions', criteria: [], note: 'acmgPredictionsCovered' },
+  {
+    topic: 'acmgTopicFunctional',
+    criteria: [
+      { code: 'PS3', label: 'acmgCritPS3' },
+      { code: 'BS3', label: 'acmgCritBS3' },
+    ],
+  },
+];
+
 /** Les codes seuls, pour la ligne qu'on recopie dans un dossier : « PVS1 PM2 PP3 ». */
-export function acmgCodes(supported) {
-  return supported.map((c) => c.code).join(' ');
+export function acmgCodes(entries) {
+  return entries.map((c) => c.code).join(' ');
 }
 
-/** Le bloc d'évidence, une ligne par critère — ce que copie le bouton de l'encart. */
-export function acmgText(supported) {
-  // Un critère conditionnel est marqué dans le texte copié aussi : collé dans un
-  // dossier, « BS1 » sans sa marque se lirait comme un critère posé.
-  return supported.map((c) => `${c.code}${c.conditional ? ' (?)' : ''} — ${c.fact}`).join('\n');
+/**
+ * Le bloc d'évidence, une ligne par critère — ce que copie le bouton de l'encart.
+ *
+ * Il ne reçoit que les critères **cochés** : un critère conditionnel qui l'a été l'a
+ * été par le biologiste, et n'a donc plus à porter de marque de doute.
+ */
+export function acmgText(entries) {
+  return entries.map((c) => (c.fact ? `${c.code} — ${c.fact}` : c.code)).join('\n');
 }

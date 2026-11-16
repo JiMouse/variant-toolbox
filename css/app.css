@@ -342,3 +342,46 @@ textarea {
 /* La jonction touchée ou frôlée : c'est le trait que le schéma doit faire ressortir. */
 .sch-junction.edge { stroke: var(--del); opacity: 1; stroke-dasharray: none; }
 .sch-junction-label.edge { fill: var(--del); font-weight: 600; }
+
+/* — Classification ACMG —
+   Le gris des notes (--muted, 11 px) est le ton de l'application pour ce qui
+   accompagne un chiffre. Ici, rien n'accompagne : le texte **est** le critère, on le
+   lit ligne à ligne et on coche. Il passe donc en pleine encre, et la hiérarchie se
+   fait par la taille et le repère « ⤷ », non par la pâleur. */
+#acmg .help,
+#acmg .note,
+#acmg .crit-body { color: var(--ink); font-size: 13px; }
+#acmg .help { margin: 2px 0 6px; }
+#acmg h3 { margin: 16px 0 6px; }
+#acmg h4 {
+  margin: 12px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--ink);
+}
+#acmg .warn-note { color: var(--warn); }
+
+/* Une ligne à cocher : case, code, puis le fait ou l'intitulé. Le code garde une
+   largeur fixe pour que les intitulés s'alignent d'une rubrique à l'autre ;
+   « PM2_Supporting » la dépasse et pousse simplement son texte. */
+.crit-list { display: block; }
+.crit {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+  cursor: pointer;
+}
+.crit input { flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.crit-code {
+  flex: 0 0 7.5em;
+  font-weight: 600;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.crit-body { flex: 1 1 auto; min-width: 0; line-height: 1.45; }
+/* La réserve attachée au critère : sous le fait, à part, et lisible. */
+.crit-note { display: block; font-size: 12px; opacity: .85; }
+.crit-note::before { content: '⤷ '; }
+.crit:hover .crit-body { color: var(--ink); }

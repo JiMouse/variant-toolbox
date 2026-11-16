@@ -8,7 +8,7 @@ import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
 import { ensemblTranscript, maneSelectOf, parseInput, pickManeRows, soTerms } from '../js/variant.js';
-import { buildAcmg, acmgCodes, acmgText } from '../js/acmg.js';
+import { buildAcmg, acmgCodes, acmgText, TO_SPECIFY } from '../js/acmg.js';
 import { buildVarTypeCheck } from '../js/annotate.js';
 import { hedge, predictedProtein } from '../js/util.js';
 
@@ -436,7 +436,7 @@ const homAR = {
   gnomad: { 'v4.1': { ac: 513548, af: 0.3182, hom: 87723 } },
   phenotypes: { source: 'Monarch', phenotypes: [{ name: 'homocystinurie', inheritance: 'AR' }] },
 };
-contains('BS2 sur une maladie récessive', facts(homAR), 'BS2 (?) — 87723 homozygotes dans gnomAD v4.1');
+contains('BS2 sur une maladie récessive', facts(homAR), 'BS2 — 87723 homozygotes dans gnomAD v4.1');
 check('pas de BS2 sur une maladie dominante', codes({
   ...homAR,
   phenotypes: { source: 'Monarch', phenotypes: [{ name: 'Li-Fraumeni', inheritance: 'AD' }] },
@@ -506,9 +506,12 @@ const firm = (r) => r.supported.filter((c) => !c.conditional).map((c) => c.code)
 const cond = (r) => r.supported.filter((c) => c.conditional).map((c) => c.code).join(' ');
 check('p.Phe508del : seul PM4 est posé par le chiffre', firm(f508), 'PM4');
 check('p.Phe508del : BS1 et BS2 restent conditionnels', cond(f508), 'BS1 BS2');
-check('le texte copié marque les critères conditionnels',
-  acmgText(f508.supported).includes('BS1 (?) —'), true);
-check('et ne marque pas les autres', acmgText(f508.supported).includes('PM4 —'), true);
+// Le texte copié ne porte que ce que le biologiste a coché : un critère conditionnel
+// qui l'a été l'a été par lui, et n'a plus à porter de marque de doute.
+check('le texte copié rend le code et le fait',
+  acmgText([f508.supported[0]]), 'PM4 — variation sans décalage du cadre de lecture (inframe) de 3 nucléotides');
+check('un critère sans fait est rendu seul', acmgText([{ code: 'PS3', fact: null }]), 'PS3');
+check('rien de coché, rien de copié', acmgText([]), '');
 // BA1 est autonome dans l'article de 2015 : au-delà de 5 %, le chiffre suffit.
 check('BA1 n’est pas conditionnel',
   firm(buildAcmg(ctx({ gnomad: { 'v4.1': { ac: 513548, af: 0.3182 } }, domain: null }), { lang: 'fr' })),
@@ -540,6 +543,36 @@ contains('EN : PM2', acmgText(buildAcmg(ctx(), { lang: 'en' }).supported),
   'PM2_Supporting — absent from gnomAD v4.1');
 contains('EN : PP3', acmgText(buildAcmg(ctx(), { lang: 'en' }).supported),
   'PP3 — deleterious for CADD, REVEL');
+
+/* — Le plan ANPGM : une case par critère que les chiffres ne posent pas — */
+const topicCodes = TO_SPECIFY.flatMap((sec) => sec.criteria.map((c) => c.code));
+
+check('les rubriques suivent le plan du référentiel',
+  TO_SPECIFY.map((sec) => sec.topic).join(' '),
+  'acmgTopicPatientFreq acmgTopicClinical acmgTopicCooccurrence acmgTopicSegregation '
+  + 'acmgTopicLength acmgTopicTypeContext acmgTopicLocation acmgTopicPredictions '
+  + 'acmgTopicFunctional');
+check('les critères à préciser, dans l’ordre des rubriques', topicCodes.join(' '),
+  'PS4 PP4 BP5 PM3 BP2 PS2 PM6 PP1 BS4 BP3 PP2 BP1 PS1 PM5 PS3 BS3');
+check('aucun critère en double', new Set(topicCodes).size, topicCodes.length);
+// Les prédictions gardent leur rubrique et n'ont aucune case : elles sont déjà étayées.
+check('les prédictions n’ont pas de case',
+  TO_SPECIFY.find((sec) => sec.topic === 'acmgTopicPredictions').criteria.length, 0);
+check('et disent pourquoi',
+  Boolean(TO_SPECIFY.find((sec) => sec.topic === 'acmgTopicPredictions').note), true);
+
+// Un critère ne doit pas être à la fois posé par un chiffre et demandé au biologiste.
+const postable = ['PVS1', 'PVS1_Moderate', 'PM1', 'PM2_Supporting', 'PM4', 'PP3', 'BA1',
+  'BS1', 'BS2', 'BP4', 'BP7'];
+check('aucun chevauchement avec les critères que l’application pose',
+  topicCodes.filter((c) => postable.includes(c)).join(',') || '—', '—');
+
+// Les libellés des deux langues, pour des clés construites dans la structure et non
+// dans un appel littéral à `t` : la vérification de couverture ne les voit pas.
+const topicKeys = TO_SPECIFY.flatMap((sec) => [sec.topic, sec.note,
+  ...sec.criteria.map((c) => c.label)].filter(Boolean));
+check('tous les libellés du plan existent en FR et EN',
+  topicKeys.filter((k) => !(k in UI.fr) || !(k in UI.en)).join(',') || '—', '—');
 
 /* — Course entre source principale et repli — */
 const later = (v, ms) => () => new Promise((r) => setTimeout(() => r(v), ms));

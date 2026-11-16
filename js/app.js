@@ -3,7 +3,7 @@
 import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
 import { buildComment, buildNomenclature, varTypeLabel } from './comment.js';
-import { buildAcmg, acmgText } from './acmg.js';
+import { buildAcmg, acmgText, TO_SPECIFY } from './acmg.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds, exonSkipping } from './structure.js';
@@ -414,10 +414,65 @@ function currentSkip() {
 }
 
 /** Un titre de sous-liste dans l'encart ACMG. */
-function acmgTitle(key) {
-  const h = document.createElement('h3');
+function acmgTitle(key, tag = 'h3') {
+  const h = document.createElement(tag);
   h.textContent = t(lang, key);
   return h;
+}
+
+/* ---------- critères ACMG : les cases cochées ----------
+ *
+ * L'état appartient à l'**analyse**, pas au rendu : `render()` est rappelé à chaque
+ * source qui arrive et à chaque changement de langue, et une case cochée ne doit pas
+ * se décocher sous les doigts du biologiste parce que gnomAD vient de répondre. Il est
+ * remis à zéro par `clearResults`, avec le reste de l'écran.
+ *
+ * `acmgRows` garde, dans l'ordre affiché, ce que chaque case recopie : le bouton de
+ * copie n'a ainsi rien à recalculer, et ne rend jamais autre chose que ce qui est à
+ * l'écran.
+ */
+let acmgChecked = new Map();
+let acmgRows = [];
+
+/** Une ligne à cocher : la case, le code, le fait ou l'intitulé, et la réserve. */
+function critRow(code, text, caveat, on) {
+  const row = document.createElement('label');
+  row.className = 'crit';
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = on;
+  box.addEventListener('change', () => {
+    acmgChecked.set(code, box.checked);
+    $('copyAcmgBtn').disabled = !acmgRows.some((r) => acmgChecked.get(r.code));
+  });
+  const name = document.createElement('span');
+  name.className = 'crit-code';
+  name.textContent = code;
+  const body = document.createElement('span');
+  body.className = 'crit-body';
+  body.textContent = text;
+  if (caveat) {
+    const n = document.createElement('span');
+    n.className = 'crit-note';
+    n.textContent = caveat;
+    body.append(n);
+  }
+  row.append(box, name, body);
+  return row;
+}
+
+/**
+ * Case d'un critère, avec son état.
+ *
+ * Les critères que les chiffres posent arrivent cochés : c'est ce que l'application
+ * affirme, et le biologiste a besoin de pouvoir les **décocher** — un PM1 sans point
+ * chaud vérifié, par exemple. Les critères conditionnels et ceux à préciser arrivent
+ * décochés : personne ne les a encore posés.
+ */
+function critLine(code, text, caveat, byDefault) {
+  if (!acmgChecked.has(code)) acmgChecked.set(code, byDefault);
+  acmgRows.push({ code, fact: text });
+  return critRow(code, text, caveat, acmgChecked.get(code));
 }
 
 /** Une ligne libre de l'encart : texte gris, éventuellement en avertissement. */
@@ -425,6 +480,28 @@ function acmgNote(text, cls = 'help') {
   const p = document.createElement('p');
   p.className = cls;
   p.textContent = text;
+  return p;
+}
+
+/**
+ * Le référentiel français sur lequel ces critères se pondèrent.
+ *
+ * Le panneau rend des critères et refuse d'en tirer une classe : il doit donc dire où
+ * se trouve la doctrine qui, elle, la tire — seuils de fréquence, usage des données
+ * prédictives, ségrégation, puis classification. C'est le document du Réseau NGS-Diag
+ * (ANPGM), celui qui s'applique aux comptes rendus que cette page sert à écrire.
+ */
+const ANPGM_URL = 'https://anpgm.fr/media/documents/BP-NGSDiag_001_Interpretation_Variants_v2.pdf';
+
+function acmgRefLine() {
+  const p = document.createElement('p');
+  p.className = 'help';
+  const a = document.createElement('a');
+  a.href = ANPGM_URL;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = t(lang, 'acmgRefLabel');
+  p.append(t(lang, 'acmgRefIntro'), a);
   return p;
 }
 
@@ -442,6 +519,7 @@ function acmgNote(text, cls = 'help') {
 function renderAcmg() {
   const box = $('acmg');
   box.textContent = '';
+  acmgRows = [];
   const { supported, waiting } = buildAcmg(ctx, {
     lang,
     gnomadVersion: $('gnomadVersion').value,
@@ -453,18 +531,16 @@ function renderAcmg() {
   // tranché (voir `crit`, js/acmg.js).
   const firm = supported.filter((c) => !c.conditional);
   const conditional = supported.filter((c) => c.conditional);
-  // Le code en clé, le fait en valeur, la réserve en note sous le fait : on ne peut
-  // pas lire le critère sans lire ce qui le porte et ce qui lui manque.
-  const critList = (list) => {
-    const dl = document.createElement('dl');
-    dl.className = 'kv';
-    kv(dl, list.map((c) => [c.code, withNote(c.fact, c.caveat)]));
-    return dl;
+  const critList = (list, byDefault) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'crit-list';
+    list.forEach((c) => wrap.append(critLine(c.code, c.fact, c.caveat, byDefault)));
+    return wrap;
   };
 
   box.append(acmgTitle('acmgSupportedTitle'));
   if (firm.length) {
-    box.append(critList(firm));
+    box.append(critList(firm, true));
   } else if (conditional.length) {
     box.append(acmgNote(t(lang, 'acmgNoneFirm')));
   } else {
@@ -475,7 +551,7 @@ function renderAcmg() {
       : t(lang, 'acmgNone'), waiting.length ? 'help pending' : 'help'));
   }
   if (conditional.length) {
-    box.append(acmgTitle('acmgConditionalTitle'), critList(conditional));
+    box.append(acmgTitle('acmgConditionalTitle'), critList(conditional, false));
   }
   // Des critères sont posés mais une source manque encore : le dire, sinon la liste
   // paraît close alors qu'elle peut encore s'allonger.
@@ -483,8 +559,21 @@ function renderAcmg() {
     box.append(acmgNote(t(lang, 'waitingFor', { src: pendingLabels(waiting) }), 'help pending'));
   }
 
-  box.append(acmgTitle('acmgManualTitle'), acmgNote(t(lang, 'acmgManual')));
-  box.append(acmgTitle('acmgUnfetchedTitle'), acmgNote(t(lang, 'acmgUnfetched')));
+  /* Tout le reste, dans le plan du référentiel ANPGM : une rubrique par titre, et des
+   * cases que le biologiste coche au vu du dossier. Les prédictions y figurent sans
+   * case, parce qu'elles sont déjà étayées plus haut (voir TO_SPECIFY, js/acmg.js). */
+  box.append(acmgTitle('acmgToSpecifyTitle'), acmgNote(t(lang, 'acmgToSpecifyHelp')));
+  for (const section of TO_SPECIFY) {
+    box.append(acmgTitle(section.topic, 'h4'));
+    if (section.note) box.append(acmgNote(t(lang, section.note)));
+    if (!section.criteria.length) continue;
+    const wrap = document.createElement('div');
+    wrap.className = 'crit-list';
+    section.criteria.forEach((c) => wrap.append(
+      critLine(c.code, t(lang, c.label), null, false),
+    ));
+    box.append(wrap);
+  }
 
   box.append(acmgTitle('acmgControlTitle'));
   const iv = ctx.intervar;
@@ -503,8 +592,9 @@ function renderAcmg() {
   }
 
   box.append(acmgNote(t(lang, 'acmgNoVerdict'), 'help warn-note'));
+  box.append(acmgRefLine());
   box.append(acmgNote(t(lang, 'acmgNoPp5')));
-  $('copyAcmgBtn').disabled = supported.length === 0;
+  $('copyAcmgBtn').disabled = !acmgRows.some((r) => acmgChecked.get(r.code));
 }
 
 function renderPhenotypes() {
@@ -811,6 +901,8 @@ function render() {
  */
 function clearResults() {
   ctx = null;
+  acmgChecked = new Map();
+  acmgRows = [];
   $('results').hidden = true;
   ['identity', 'structure', 'numbers', 'gnomadTable', 'predTable', 'consTable', 'acmg',
     'phenotypes', 'links']
@@ -1102,10 +1194,10 @@ $('copyBtn').addEventListener('click', () => copyToClipboard(
 ));
 $('copyAcmgBtn').addEventListener('click', () => {
   if (!ctx) return;
-  const { supported } = buildAcmg(ctx, {
-    lang, gnomadVersion: $('gnomadVersion').value, skip: currentSkip(),
-  });
-  copyToClipboard(acmgText(supported), $('copyAcmgBtn'), t(lang, 'acmgCopy'), t(lang, 'copied'));
+  // Ce qui est coché, et dans l'ordre affiché : le presse-papier ne doit jamais rendre
+  // autre chose que ce que le biologiste a sous les yeux.
+  const picked = acmgRows.filter((r) => acmgChecked.get(r.code));
+  copyToClipboard(acmgText(picked), $('copyAcmgBtn'), t(lang, 'acmgCopy'), t(lang, 'copied'));
 });
 $('copyIdBtn').addEventListener('click', () => {
   if (ctx) copyToClipboard(hgvsText(), $('copyIdBtn'), t(lang, 'copyHgvs'), t(lang, 'copied'));

@@ -349,13 +349,26 @@ Quatre listes, et la frontière entre elles porte autant que leur contenu.
    homozygotes sont des patients, non des témoins. Les deux chiffres restent affichés —
    ils mesurent la fréquence des porteurs — sous une étiquette qui dit ce qu'ils valent.
 
-3. **À poser par le biologiste** — ce qu'aucune base ne sait : `PS2`/`PM6` de novo,
-   `PS3`/`BS3` fonctionnel, `PS4` prévalence, `PM3`/`BP2` phase, `PP1`/`BS4` ségrégation,
-   `PP4` phénotype, `BP5` autre cause trouvée.
+3. **À préciser** — tout ce qu'aucun chiffre récupéré ici ne peut poser, rangé selon le
+   plan du **référentiel ANPGM**, c'est-à-dire dans l'ordre où le dossier se constitue
+   et non dans celui d'une table de codes :
 
-4. **Hors des sources interrogées ici** — `PS1`/`PM5` (ClinVar au même acide aminé),
-   `PP2`/`BP1` (contrainte du gène en faux-sens), `BP3` (région répétée). Ces données
-   existent ; l'application ne les demande pas.
+   | Rubrique ANPGM | Critères |
+   |---|---|
+   | Données de fréquence des variants chez les patients | `PS4` |
+   | Critères cliniques | `PP4`, `BP5` |
+   | Co-occurrence de variants | `PM3`, `BP2` |
+   | Données de ségrégation | `PS2`, `PM6`, `PP1`, `BS4` |
+   | Variation affectant la longueur de la protéine | `BP3` |
+   | Type et contexte de la variation | `PP2`, `BP1` |
+   | Localisation du variant | `PS1`, `PM5` |
+   | Prédictions bio-informatiques | *(aucune case : déjà étayées plus haut)* |
+   | Données fonctionnelles | `PS3`, `BS3` |
+
+   La rubrique des prédictions garde sa place **sans aucune case** : les prédicteurs et
+   SpliceAI sont interrogés à chaque analyse et leur verdict est posé dans la première
+   liste. Un titre sans case le dit mieux qu'un titre absent, qui laisserait croire à un
+   oubli.
 
 Puis un **contrôle automatique** : la classe et les critères d'InterVar, qui étaient
 jusqu'ici dans l'encart « Chiffres ». Contrôle et non conclusion — et InterVar ne traite
@@ -369,8 +382,21 @@ Un critère n'est posé **que si sa source a répondu** : gnomAD en panne ne doi
 produire un « absente de gnomAD », qui serait PM2 posé sur une panne. Tant qu'une source
 est en vol, le panneau dit laquelle.
 
-Le bouton **Copier les critères** rend une ligne par critère, avec le fait qui le
-porte ; un critère conditionnel y est marqué `(?)`.
+### Cocher, décocher
+
+Chaque critère porte une **case**, y compris ceux que l'application pose elle-même. Les
+critères étayés arrivent **cochés** — c'est ce que l'application affirme, et il faut
+pouvoir le lui retirer : un `PM1` dont le point chaud n'est pas vérifié, par exemple.
+Les critères conditionnels et ceux à préciser arrivent décochés : personne ne les a
+encore posés.
+
+L'état appartient à l'analyse en cours : une case cochée ne se décoche pas parce qu'une
+source vient de répondre, ni parce qu'on passe en anglais. Une nouvelle analyse le remet
+à zéro, avec le reste de l'écran.
+
+Le bouton **Copier les critères** rend une ligne par critère **coché**, avec le fait qui
+le porte quand il y en a un. Un critère conditionnel coché l'a été par le biologiste : il
+ne porte donc plus de marque de doute.
 
 ### Pourquoi pas une classe calculée
 
@@ -378,6 +404,13 @@ Pondérer ces critères demande la spécification du gène (VCEP ClinGen quand i
 une), le mécanisme de la maladie et souvent le contexte du patient. Les seuils eux-mêmes
 en dépendent : BA1 vaut 1,5 % pour CFTR et 5 % par défaut, BS1 n'a pas de valeur
 générale. Un verdict calculé ici serait une opinion de plus, présentée comme un résultat.
+
+Le panneau renvoie au référentiel français qui, lui, tranche : [ANPGM / Réseau NGS-Diag
+— *Interprétation des variants*](https://anpgm.fr/media/documents/BP-NGSDiag_001_Interpretation_Variants_v2.pdf)
+(document NGSDIAG_001, version 2, révisée le 11/02/2021). C'est lui qui fixe, pour les
+comptes rendus que cette page sert à écrire, l'usage des fréquences alléliques, des
+données prédictives, de la ségrégation et des données fonctionnelles, puis la
+classification elle-même.
 
 L'encart **Liens** porte un lien vers l'[ACMG Validator de Switzerland
 Omics](https://switzerlandomics.ch/technologies/acmg-validator/), outil de revue

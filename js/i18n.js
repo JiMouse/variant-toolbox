@@ -157,17 +157,48 @@ export const UI = {
       + 'dire qu’il n’y en a pas : voir ci-dessous.',
     acmgConditionalTitle: 'Suggérés par un chiffre, à trancher sur la maladie',
     acmgNoneFirm: 'Aucun critère n’est posé par un chiffre à lui seul.',
-    acmgManualTitle: 'À poser par le biologiste',
-    acmgManual: 'PS2/PM6 de novo · PS3/BS3 étude fonctionnelle · PS4 prévalence '
-      + 'cas/témoins · PM3/BP2 phase avec une autre variation · PP1/BS4 ségrégation · '
-      + 'PP4 phénotype spécifique du gène · BP5 autre cause moléculaire trouvée',
-    acmgUnfetchedTitle: 'Hors des sources interrogées ici',
-    acmgUnfetched: 'PS1/PM5 (ClinVar au même acide aminé) · PP2/BP1 (contrainte du gène '
-      + 'en faux-sens) · BP3 (région répétée)',
+    acmgToSpecifyTitle: 'À préciser',
+    acmgToSpecifyHelp: 'Ce qu’aucun chiffre récupéré ici ne peut poser — classé selon le '
+      + 'plan du référentiel ANPGM. À cocher au vu du dossier.',
+    // Plan du référentiel ANPGM / Réseau NGS-Diag (NGSDIAG_001 v2).
+    acmgTopicPatientFreq: 'Données de fréquence des variants chez les patients',
+    acmgTopicClinical: 'Critères cliniques',
+    acmgTopicCooccurrence: 'Co-occurrence de variants',
+    acmgTopicSegregation: 'Données de ségrégation',
+    acmgTopicLength: 'Variation affectant la longueur de la protéine',
+    acmgTopicTypeContext: 'Type et contexte de la variation',
+    acmgTopicLocation: 'Localisation du variant',
+    acmgTopicPredictions: 'Prédictions bio-informatiques',
+    acmgTopicFunctional: 'Données fonctionnelles',
+    acmgPredictionsCovered: 'Déjà étayées par l’application : les prédicteurs et SpliceAI '
+      + 'sont interrogés à chaque analyse, et leur verdict est posé plus haut (PP3/BP4).',
+    // Les critères à cocher, dans la langue du référentiel.
+    acmgCritPS4: 'prévalence significativement plus élevée chez les patients que dans '
+      + 'les témoins',
+    acmgCritPP4: 'phénotype ou histoire familiale très spécifiques du gène',
+    acmgCritBP5: 'autre cause moléculaire trouvée chez le patient',
+    acmgCritPM3: 'en trans d’une variation pathogène, maladie récessive',
+    acmgCritBP2: 'en trans d’une pathogène en dominant, ou en cis avec une pathogène',
+    acmgCritPS2: 'de novo, ascendance confirmée',
+    acmgCritPM6: 'de novo, ascendance non confirmée',
+    acmgCritPP1: 'ségrégation avec la maladie dans la famille',
+    acmgCritBS4: 'absence de ségrégation dans la famille',
+    acmgCritBP3: 'variation sans décalage du cadre dans une région répétée, hors domaine '
+      + 'fonctionnel',
+    acmgCritPP2: 'faux-sens dans un gène où ils sont rares et un mécanisme connu de la '
+      + 'maladie',
+    acmgCritBP1: 'faux-sens dans un gène où seules les troncatures sont pathogènes',
+    acmgCritPS1: 'même changement d’acide aminé qu’une variation pathogène connue',
+    acmgCritPM5: 'autre changement pathogène connu au même acide aminé',
+    acmgCritPS3: 'étude fonctionnelle montrant un effet délétère',
+    acmgCritBS3: 'étude fonctionnelle ne montrant aucun effet',
     acmgControlTitle: 'Contrôle automatique',
     acmgNoVerdict: 'Aucune classe n’est calculée ici : pondérer ces critères demande la '
       + 'spécification du gène (VCEP ClinGen s’il en existe une), le mécanisme de la '
       + 'maladie et le contexte du patient. La classe reste celle que vous posez.',
+    acmgRefIntro: 'Référentiel français pour la pondération et la classification : ',
+    acmgRefLabel: 'ANPGM / Réseau NGS-Diag — Interprétation des variants '
+      + '(NGSDIAG_001, version 2, 2021)',
     acmgNoPp5: 'PP5 et BP6 ne sont jamais posés ici : ClinGen les a retirés en 2018, parce '
       + 'qu’ils reclassent ClinVar avec ClinVar. InterVar, lui, les pose encore — d’où un '
       + 'verdict parfois plus tranché que les critères ci-dessus. La soumission ClinVar se '
@@ -430,17 +461,43 @@ export const UI = {
       + 'there is none: see below.',
     acmgConditionalTitle: 'Suggested by a figure, to be settled against the disease',
     acmgNoneFirm: 'No criterion is set by a figure on its own.',
-    acmgManualTitle: 'For the reporting scientist to set',
-    acmgManual: 'PS2/PM6 de novo · PS3/BS3 functional study · PS4 case/control '
-      + 'prevalence · PM3/BP2 phase with another variant · PP1/BS4 segregation · '
-      + 'PP4 phenotype specific to the gene · BP5 alternate molecular cause found',
-    acmgUnfetchedTitle: 'Outside the sources queried here',
-    acmgUnfetched: 'PS1/PM5 (ClinVar at the same amino acid) · PP2/BP1 (gene missense '
-      + 'constraint) · BP3 (repeat region)',
+    acmgToSpecifyTitle: 'To be specified',
+    acmgToSpecifyHelp: 'What no figure retrieved here can set — ordered after the ANPGM '
+      + 'reference document. To be ticked against the case file.',
+    acmgTopicPatientFreq: 'Variant frequency in patients',
+    acmgTopicClinical: 'Clinical criteria',
+    acmgTopicCooccurrence: 'Co-occurrence of variants',
+    acmgTopicSegregation: 'Segregation data',
+    acmgTopicLength: 'Variant affecting protein length',
+    acmgTopicTypeContext: 'Type and context of the variant',
+    acmgTopicLocation: 'Location of the variant',
+    acmgTopicPredictions: 'In silico predictions',
+    acmgTopicFunctional: 'Functional data',
+    acmgPredictionsCovered: 'Already supported by the application: the predictors and '
+      + 'SpliceAI are queried on every analysis, and their verdict is set above (PP3/BP4).',
+    acmgCritPS4: 'prevalence significantly higher in patients than in controls',
+    acmgCritPP4: 'phenotype or family history highly specific to the gene',
+    acmgCritBP5: 'alternate molecular cause found in the patient',
+    acmgCritPM3: 'in trans with a pathogenic variant, recessive disease',
+    acmgCritBP2: 'in trans with a pathogenic variant in a dominant gene, or in cis with one',
+    acmgCritPS2: 'de novo, parentage confirmed',
+    acmgCritPM6: 'de novo, parentage not confirmed',
+    acmgCritPP1: 'cosegregation with disease in the family',
+    acmgCritBS4: 'lack of segregation in the family',
+    acmgCritBP3: 'in-frame variant in a repeat region, outside a functional domain',
+    acmgCritPP2: 'missense in a gene where they are rare and a known disease mechanism',
+    acmgCritBP1: 'missense in a gene where only truncating variants are pathogenic',
+    acmgCritPS1: 'same amino acid change as a known pathogenic variant',
+    acmgCritPM5: 'another pathogenic change known at the same amino acid',
+    acmgCritPS3: 'functional study showing a deleterious effect',
+    acmgCritBS3: 'functional study showing no effect',
     acmgControlTitle: 'Automated control',
     acmgNoVerdict: 'No class is computed here: weighting these criteria requires the '
       + 'gene specification (a ClinGen VCEP where one exists), the disease mechanism and '
       + 'the patient context. The class stays the one you set.',
+    acmgRefIntro: 'French reference for weighting and classification: ',
+    acmgRefLabel: 'ANPGM / Réseau NGS-Diag — Interprétation des variants '
+      + '(NGSDIAG_001, version 2, 2021, in French)',
     acmgNoPp5: 'PP5 and BP6 are never set here: ClinGen retired them in 2018, because they '
       + 'reclassify ClinVar with ClinVar. InterVar still sets them — hence a verdict '
       + 'sometimes firmer than the criteria above. The ClinVar submission is on its own '

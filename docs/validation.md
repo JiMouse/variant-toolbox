@@ -319,3 +319,20 @@ tools/test-comment.mjs) :
 
 29 vérifications hors réseau de plus dans test-comment.mjs (162), dont la frontière
 étayé/conditionnel sur `p.Phe508del` et les deux langues.
+
+### Le plan ANPGM et les cases à cocher
+
+Ce qu'aucun chiffre ne pose est rangé selon le plan du référentiel (NGSDIAG_001 v2) et
+non selon la numérotation de l'article de 2015 : fréquence chez les patients (`PS4`),
+critères cliniques (`PP4`, `BP5`), co-occurrence (`PM3`, `BP2`), ségrégation (`PS2`,
+`PM6`, `PP1`, `BS4`), longueur de la protéine (`BP3`), type et contexte (`PP2`, `BP1`),
+localisation (`PS1`, `PM5`), prédictions (aucune case — déjà étayées), données
+fonctionnelles (`PS3`, `BS3`).
+
+Vérifié sur l'application, `chr17-7675088-C-T` : **18 cases**, les deux critères posés
+par les chiffres cochés d'avance (`PM1`, `PP3`), les seize autres décochées, et les neuf
+rubriques dans l'ordre du référentiel. Huit vérifications hors réseau de plus (170) :
+l'ordre des rubriques, l'ordre des critères, l'absence de doublon, l'absence de
+chevauchement avec les onze critères que l'application sait poser, et l'existence des
+libellés dans les deux langues — ces clés-là sont construites dans la structure, donc
+invisibles à la vérification de couverture qui lit les appels littéraux à `t`.
