@@ -6,7 +6,7 @@
 //   node tools/test-structure.mjs
 
 import {
-  variantSpan, exonsFromUcsc, pickRecord, intronBounds, locate,
+  variantSpan, exonsFromUcsc, pickRecord, intronBounds, locate, exonSkipping,
 } from '../js/structure.js';
 import {
   consequenceFromStructure, proteinConsequence, inferConsequence,
@@ -55,6 +55,11 @@ const CFTR = {
 
 const tp53 = exonsFromUcsc(TP53);
 const cftr = exonsFromUcsc(CFTR);
+// Deux variantes de TP53 pour les cas limites : sans CDS (NR_), et réduit à son exon 1.
+const nrTx = exonsFromUcsc({ ...TP53, name: 'NR_000001.1', cdsStart: 7687490, cdsEnd: 7687490 });
+const oneExon = exonsFromUcsc({
+  ...TP53, name: 'NM_000000.1', exonStarts: '7687376,', exonEnds: '7687490,',
+});
 
 /* — Lecture de la structure — */
 
@@ -170,6 +175,79 @@ check('exon entier emporté : jonction', wholeExon.kind, 'junction');
 check('exon entier emporté : les deux côtés', wholeExon.sides, ['donor', 'acceptor']);
 check('exon entier emporté : exon 5 listé', wholeExon.wholeExons, [5]);
 
+/* — Saut d'exon : quel exon, et sa phase —
+ *
+ * L'exon sauté n'est pas toujours celui que mesurent les lignes précédentes : côté
+ * accepteur, le site atteint est celui de l'exon **suivant**. C'est tout l'intérêt du
+ * calcul, et ce que ces vérifications protègent.
+ *
+ * TP53 exon 4 = 279 pb (multiple de 3), exon 5 = 184 pb (reste 1). */
+
+const skipAt = (st, pos, ref = 'C', alt = 'T') =>
+  exonSkipping(st, locate(st, variantSpan({ pos, ref, alt })));
+
+// c.375G>A, dernière base de l'exon 4 : bordure exonique, donc site possiblement
+// atteint — jamais acquis, d'où `certain: false`.
+const s375 = skipAt(tp53, 7675994);
+check('bordure d’exon : l’exon porteur', [s375.exons, s375.side], [[4], 'donor']);
+check('bordure d’exon : atteinte non acquise', s375.certain, false);
+check('TP53 exon 4 (279 pb) : en phase', [s375.inFrame, s375.coding, s375.residues],
+  [true, 279, 93]);
+
+// c.375+1G>A : site donneur canonique de l'exon 4 — même exon, atteinte acquise.
+const sDon = skipAt(tp53, 7675993);
+check('donneur canonique : exon précédent', sDon.exons, [4]);
+check('donneur canonique : atteinte acquise', sDon.certain, true);
+
+// c.376-1G>A : site accepteur canonique — l'exon sauté est le **suivant**, et sa
+// longueur n'est pas un multiple de 3.
+const sAcc = skipAt(tp53, 7675237);
+check('accepteur canonique : exon suivant', [sAcc.exons, sAcc.side], [[5], 'acceptor']);
+check('TP53 exon 5 (184 pb) : hors phase', [sAcc.inFrame, sAcc.coding, sAcc.residues],
+  [false, 184, null]);
+
+// Brin + : la même règle, pour que l'inversion d'exon ne passe pas inaperçue.
+// CFTR exon 1 = 124 pb dont 53 codantes (l'ATG est à 117480096), exon 2 = 86 pb.
+check('CFTR brin + : accepteur de l’intron 1 → exon 2',
+  [skipAt(cftr, 117548616).exons, skipAt(cftr, 117548616).inFrame], [[2], false]);
+const sCf1 = skipAt(cftr, 117480149);
+check('CFTR brin + : donneur de l’intron 1 → exon 1', sCf1.exons, [1]);
+// L'exon déborde du CDS : c'est la part codante qui est comptée, et le codon
+// d'initiation emporté est signalé — « hors phase » seul serait trompeur.
+check('exon bordant le CDS : part codante comptée', sCf1.coding, 53);
+check('exon bordant le CDS : codon d’initiation emporté', sCf1.carries, ['start']);
+
+// Exon entièrement en 5'UTR (exon 1 de TP53, au-dessus du CDS sur le brin −) : le
+// cadre de lecture n'est pas en cause, et aucune phase n'est affirmée.
+const sUtr = skipAt(tp53, 7687377);
+check('exon hors CDS : aucune base codante', [sUtr.exons, sUtr.coding], [[1], 0]);
+check('exon hors CDS : pas de phase', [sUtr.inFrame, sUtr.residues], [false, null]);
+
+// Région d'épissage, pas site canonique : la question se pose, la réponse est moins
+// ferme. Au-delà de +8, elle ne se pose plus.
+check('région d’épissage : exon désigné, atteinte non acquise',
+  [skipAt(tp53, 7675989).exons, skipAt(tp53, 7675989).certain], [[4], false]);
+check('intron profond : pas de saut à discuter', skipAt(tp53, 7675985), null);
+check('cœur d’exon : pas de saut à discuter', skipAt(tp53, 7675088), null);
+check('4e base de l’exon : pas encore la bordure', skipAt(tp53, 7675997), null);
+
+// Variation à cheval sur une jonction : l'exon touché, atteinte acquise.
+check('à cheval : exon touché et atteinte acquise',
+  [skipAt(tp53, 7675992, 'ACC', 'A').exons, skipAt(tp53, 7675992, 'ACC', 'A').certain],
+  [[4], true]);
+// Exon 5 emporté en entier : les deux sites sont détruits.
+const sWhole = exonSkipping(tp53, locate(tp53, variantSpan({
+  pos: 7675040, ref: 'A'.repeat(210), alt: 'A',
+})));
+check('exon entier emporté : les deux côtés', [sWhole.exons, sWhole.side], [[5], 'both']);
+
+// Transcrit non codant, transcrit mono-exonique, entrées vides : rien ne doit lever.
+check('transcrit non codant : aucune phase', skipAt(nrTx, 7675993).coding, 0);
+check('transcrit mono-exonique : aucun saut possible',
+  exonSkipping(oneExon, locate(oneExon, variantSpan({ pos: 7687400, ref: 'C', alt: 'T' }))), null);
+check('saut sans structure', exonSkipping(null, null), null);
+check('saut hors du transcrit', skipAt(tp53, 7600000), null);
+
 /* — Choix de l'enregistrement UCSC — */
 
 const items = [TP53, { ...TP53, name: 'NM_001126112.3' }];
@@ -236,8 +314,7 @@ check('délétion à cheval sur une jonction',
   type(tp53, 7675235, 'NP_000537.3:p.?', 'CTTT', 'C'), 'splice_acceptor');
 
 // Transcrit non codant : aucun CDS, donc aucune conséquence protéique possible.
-const nr = exonsFromUcsc({ ...TP53, name: 'NR_000001.1', cdsStart: 7687490, cdsEnd: 7687490 });
-check('transcrit non codant', type(nr, 7675088, null), 'noncoding_exon');
+check('transcrit non codant', type(nrTx, 7675088, null), 'noncoding_exon');
 
 // Dans le CDS mais protéine indéterminée : « variation codante » plutôt que rien.
 check('CDS sans nomenclature protéique', type(tp53, 7675088, null), 'coding');

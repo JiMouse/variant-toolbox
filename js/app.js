@@ -5,7 +5,7 @@ import { annotate, DEL, TOL } from './annotate.js';
 import { buildComment, buildNomenclature, varTypeLabel } from './comment.js';
 import { buildLinks, LINK_GROUPS } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
-import { intronBounds } from './structure.js';
+import { intronBounds, exonSkipping } from './structure.js';
 import {
   findEpisignatures, describeEpisignature, STATE_LABEL, RESEARCH, CONTROLS, WANTED,
 } from './episignatures.js';
@@ -549,6 +549,41 @@ function renderStructure() {
     rows.push([edgeLabel, node]);
   }
 
+  /* Saut d'exon : la phase, quand un site d'épissage est en cause.
+   *
+   * Sa place est ici et non plus haut : les lignes précédentes disent *où* est la
+   * variation, celle-ci ce qu'il adviendrait du cadre de lecture si le site atteint
+   * faisait sauter son exon. L'exon concerné est nommé parce qu'il n'est pas toujours
+   * celui des lignes du dessus — côté accepteur, c'est l'exon suivant. */
+  const skip = exonSkipping(st, loc);
+  if (skip) {
+    const ex = t(lang, skip.exons.length === 1 ? 'skipExonOne' : 'skipExonMany',
+      { n: skip.exons[0], list: skip.exons.join(', ') });
+    const context = [
+      skip.side && skip.side !== 'both' ? t(lang, 'skipSite', { site: site(skip.side) }) : null,
+      skip.coding ? t(lang, 'skipCodingBp', { n: decimal(String(skip.coding), lang) }) : null,
+    ].filter(Boolean).join(', ');
+    const vars = {
+      ex,
+      ctx: context,
+      aa: skip.residues === null ? '' : t(lang, skip.residues === 1 ? 'skipAaOne' : 'skipAaMany',
+        { n: decimal(String(skip.residues), lang) }),
+      what: skip.carries
+        .map((c) => t(lang, c === 'start' ? 'skipAtg' : 'skipStopCodon'))
+        .join(t(lang, 'skipAnd')),
+    };
+    // Hors d'un site canonique ou d'une jonction emportée, l'atteinte du site n'est que
+    // possible : la conséquence se signale en avertissement, pas en alerte.
+    const severe = skip.certain ? 'alert' : 'no';
+    const [key, kind] = !skip.coding ? ['skipNoncoding', '']
+      : skip.carries.length ? ['skipCarries', severe]
+        : skip.inFrame ? ['skipInFrame', '']
+          : ['skipOutFrame', severe];
+    const node = document.createElement('span');
+    node.append(badge(t(lang, key, vars), kind));
+    rows.push([t(lang, 'structSkip'), node]);
+  }
+
   const dl = document.createElement('dl');
   dl.className = 'kv';
   kv(dl, rows);
@@ -564,12 +599,12 @@ function renderStructure() {
     wrap.append(node);
     box.append(h, wrap);
   };
-  figure('schemaGene', geneSchema(st, loc, { lang }));
+  figure('schemaGene', geneSchema(st, loc, { lang, skip }));
   if (loc.kind === 'exon' || loc.kind === 'intron' || loc.kind === 'junction') {
     figure('schemaZoom', zoomSchema(st, loc, { lang }));
   }
 
-  for (const key of ['schemaScaleNote', 'structHelp']) {
+  for (const key of ['schemaScaleNote', 'structHelp', skip && 'skipHelp'].filter(Boolean)) {
     const p = document.createElement('p');
     p.className = 'help';
     p.textContent = t(lang, key);

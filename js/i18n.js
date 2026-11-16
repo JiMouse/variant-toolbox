@@ -173,6 +173,30 @@ export const UI = {
     structPending: 'Lecture de la structure exonique…',
     structNone: 'Structure exonique indisponible pour ce transcrit.',
     structOutside: 'La variation tombe hors du transcrit : aucune jonction à mesurer.',
+    // Saut d'exon : la phase de l'exon dont le site est mis en cause (voir
+    // exonSkipping, js/structure.js). Les verbes sont au conditionnel — le saut est
+    // l'hypothèse de référence, pas un fait vérifié.
+    structSkip: 'Saut d’exon',
+    skipExonOne: 'l’exon {n}',
+    skipExonMany: 'les exons {list}',
+    skipSite: 'site {site}',
+    skipCodingBp: '{n} pb codantes',
+    skipAaOne: '{n} acide aminé',
+    skipAaMany: '{n} acides aminés',
+    skipInFrame: 'en phase — le saut de {ex} ({ctx}) retirerait {aa} sans décaler le '
+      + 'cadre de lecture',
+    skipOutFrame: 'hors phase — le saut de {ex} ({ctx}) décalerait le cadre de lecture',
+    skipCarries: 'le saut de {ex} ({ctx}) emporterait {what} : la phase ne dit pas la '
+      + 'conséquence',
+    skipAtg: 'le codon d’initiation',
+    skipStopCodon: 'le codon stop',
+    skipAnd: ' et ',
+    skipNoncoding: '{ex} ({ctx}) ne contient aucune base codante : le cadre de lecture '
+      + 'n’est pas en cause',
+    skipHelp: 'Saut d’exon : conséquence de référence d’une variation d’épissage, non '
+      + 'vérifiée ici — une rétention d’intron ou l’usage d’un site cryptique en '
+      + 'produiraient une autre. L’exon est dit en phase quand sa part codante est un '
+      + 'multiple de 3. Sur le schéma du transcrit, il est encadré en pointillés.',
   },
   en: {
     tagline: 'Variant annotation and report comment — web version of the SNV ToolBox',
@@ -344,6 +368,26 @@ export const UI = {
     structPending: 'Reading the exon structure…',
     structNone: 'No exon structure available for this transcript.',
     structOutside: 'The variant falls outside the transcript: no junction to measure.',
+    structSkip: 'Exon skipping',
+    skipExonOne: 'exon {n}',
+    skipExonMany: 'exons {list}',
+    skipSite: '{site} site',
+    skipCodingBp: '{n} coding bp',
+    skipAaOne: '{n} amino acid',
+    skipAaMany: '{n} amino acids',
+    skipInFrame: 'in frame — skipping {ex} ({ctx}) would remove {aa} without shifting '
+      + 'the reading frame',
+    skipOutFrame: 'out of frame — skipping {ex} ({ctx}) would shift the reading frame',
+    skipCarries: 'skipping {ex} ({ctx}) would remove {what}: the frame does not '
+      + 'describe the consequence',
+    skipAtg: 'the initiation codon',
+    skipStopCodon: 'the stop codon',
+    skipAnd: ' and ',
+    skipNoncoding: '{ex} ({ctx}) contains no coding base: the reading frame is not at stake',
+    skipHelp: 'Exon skipping is the reference consequence of a splice variant, and is '
+      + 'not verified here — intron retention or the use of a cryptic site would '
+      + 'produce another. An exon is in frame when its coding length is a multiple of '
+      + '3. It is outlined with a dashed box in the transcript diagram.',
   },
 };
 

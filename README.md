@@ -216,6 +216,7 @@ Le panneau donne d'abord les chiffres :
 | Site accepteur (5′) | 278 pb |
 | Site donneur (3′) | **0 pb** |
 | Bordure exonique | **oui — sur la base de bordure elle-même, côté donneur** |
+| Saut d'exon | **en phase** — le saut de l'exon 4 (site donneur, 279 pb codantes) retirerait 93 acides aminés sans décaler le cadre de lecture |
 
 puis deux schémas. Le premier situe la variation **dans le transcrit entier** : exons en
 boîtes, parts traduites en plein et UTR en demi-hauteur, introns en trait. Le second
@@ -228,6 +229,34 @@ chaque jonction visible.
 définition de `splice_region_variant` chez VEP ; *site canonique* = ±1 et ±2 dans
 l'intron ; *région d'épissage intronique* = jusqu'à +8/−8. Entre la 4e et la 10e base de
 l'exon, le panneau dit « non, mais proche ».
+
+**Saut d'exon : quel exon, et en phase ou non.** Une fois le site d'épissage mis en
+cause, la question suivante est celle de PVS1 : que devient le cadre de lecture si
+l'exon saute ? Elle se tranche sur une longueur — part codante multiple de 3, le saut
+retire des acides aminés sans décaler le cadre ; sinon il le décale, et la conséquence
+rejoint celle d'un frameshift. Aucun des chiffres au-dessus n'y répond, pour une raison
+qui est le cœur du calcul : **l'exon sauté n'est pas toujours celui qu'ils mesurent.**
+Côté donneur c'est l'exon précédent, côté accepteur **le suivant** — `c.376-1G>A` est
+dans l'intron 4 et met en cause l'exon **5**, qui fait 184 pb et saute donc hors phase.
+La ligne nomme l'exon pour cette raison, et le schéma du transcrit l'**encadre en
+pointillés** : c'est le seul endroit où le cadre et l'épingle de la variation ne
+désignent pas le même exon.
+
+La longueur comptée est la **part codante** de l'exon, et non l'exon entier : sur les
+exons qui bordent le CDS les deux diffèrent, et c'est la part codante qui porte le cadre
+de lecture. Quand le saut emporterait en plus le codon d'initiation ou le codon stop —
+CFTR `c.53+1G>T`, dont l'exon 1 ne compte que 53 pb codantes et porte l'ATG — la phase
+ne décrit plus la conséquence, et la ligne le dit au lieu d'annoncer un chiffre. La
+ligne paraît dès qu'un site est en cause au sens des seuils ci-dessus : site canonique,
+région d'épissage intronique, bordure exonique, jonction emportée. Au-delà de ±8 et au
+cœur d'un exon, elle n'est pas écrite.
+
+**Ce que la ligne n'affirme pas.** Le saut d'exon est la conséquence de *référence*
+d'une variation d'épissage, pas la seule : une rétention d'intron ou l'usage d'un site
+cryptique en produiraient une autre, et rien ici ne vérifie laquelle survient — ce
+module ne connaît que la géométrie du transcrit. Les verbes sont au conditionnel pour
+cette raison, et hors d'un site canonique ou d'une jonction emportée — où l'atteinte est
+acquise — la ligne se signale en avertissement plutôt qu'en alerte.
 
 **Échelles.** Dans la vue du transcrit, les longueurs d'exons sont **compressées en
 racine carrée** et les introns sont **hors échelle** : à l'échelle linéaire, le dernier

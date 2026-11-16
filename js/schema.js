@@ -82,9 +82,9 @@ function exonWidths(exons) {
  *
  * @param {object} st  structure (voir js/structure.js)
  * @param {object} loc position de la variation
- * @param {object} opts { lang }
+ * @param {object} opts { lang, skip } — `skip` = sortie d'`exonSkipping`, ou null
  */
-export function geneSchema(st, loc, { lang = 'fr' } = {}) {
+export function geneSchema(st, loc, { lang = 'fr', skip = null } = {}) {
   const H = 76;
   const TOP = 30;       // ligne du haut de la piste
   const BOX = 22;       // hauteur d'un exon codant
@@ -132,6 +132,21 @@ export function geneSchema(st, loc, { lang = 'fr' } = {}) {
     }
     x += w + INTRON_W * k;
   });
+
+  /* L'exon dont le saut est en question, encadré en pointillés.
+   *
+   * Ce n'est pas toujours celui que l'épingle désigne : une variation intronique met en
+   * cause le site de l'exon **voisin**, et c'est lui que le saut emporterait. Le cadre
+   * est neutre — il dit lequel, pas ce qu'il en coûte : la phase est écrite au-dessus. */
+  if (skip) {
+    for (const n of skip.exons) {
+      const p = placed.find((q) => q.e.number === n);
+      if (!p) continue;
+      s.append(el('rect', {
+        class: 'sch-skip', x: p.x - 2, y: TOP - 4, width: p.w + 4, height: BOX + 8, rx: 2,
+      }));
+    }
+  }
 
   /* Numéros d'exon : un sur N, N choisi pour laisser ~45 unités entre deux étiquettes.
    *

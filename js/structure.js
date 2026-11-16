@@ -273,11 +273,110 @@ export function locate(st, span) {
     offsetAcceptor: null,
     // Un exon emporté en entier a ses deux jonctions touchées : les deux sont nommées.
     sides: crossesLow && crossesHigh ? ['donor', 'acceptor'] : [side],
+    exons: touched.map((x) => x.number),
     wholeExons: touched.filter((x) => start <= x.start && end >= x.end).map((x) => x.number),
     nearest: { side, dist: 0, boundary },
     edge: 'junction',
     span,
     window: zoomWindow(span, boundary, null),
+  };
+}
+
+/** Part codante d'un exon, en pb — 0 pour un exon entièrement UTR ou un transcrit NR_. */
+function codingLength(st, e) {
+  if (!st.coding) return 0;
+  const lo = Math.max(e.start, st.cdsStart);
+  const hi = Math.min(e.end, st.cdsEnd);
+  return hi >= lo ? hi - lo + 1 : 0;
+}
+
+/**
+ * Exon(s) que le saut emporterait, et fermeté de l'atteinte du site.
+ *
+ * Intronique : le site mis en cause est celui dont la variation est la plus proche, et
+ * l'exon sauté est **le sien** — l'exon précédent côté donneur, le suivant côté
+ * accepteur. C'est là que le numéro cesse d'être celui qu'affiche le reste du panneau,
+ * et la raison d'être de cette fonction. Exonique en bordure : l'exon qui porte la
+ * variation. À cheval sur une jonction : tous les exons touchés.
+ *
+ * `certain` sépare ce qui est acquis — site canonique détruit, jonction emportée — de
+ * ce qui ne l'est pas : dans la région d'épissage (±3 à ±8, bases 1 à 3 de l'exon),
+ * l'atteinte du site est possible, pas établie.
+ */
+function skippedExons(st, loc) {
+  if (loc.kind === 'junction') {
+    const sides = loc.sides || [];
+    return {
+      numbers: (loc.exons && loc.exons.length) ? loc.exons : [loc.exon],
+      side: sides.length === 2 ? 'both' : (sides[0] || null),
+      certain: true,
+    };
+  }
+  if (loc.kind === 'intron') {
+    if (loc.edge !== 'canonical' && loc.edge !== 'splice') return null;
+    const donor = loc.nearest.side === 'donor';
+    return {
+      numbers: [donor ? loc.intron : loc.intron + 1],
+      side: loc.nearest.side,
+      certain: loc.edge === 'canonical',
+    };
+  }
+  if (loc.kind === 'exon' && loc.edge === 'edge' && loc.nearest) {
+    return { numbers: [loc.exon], side: loc.nearest.side, certain: false };
+  }
+  return null;
+}
+
+/**
+ * Exon dont le saut est en question, et **phase** de ce saut.
+ *
+ * Une variation d'épissage ne dit pas par elle-même ce que devient la protéine : c'est
+ * la longueur de l'exon sauté qui le tranche. Multiple de 3, son saut retire des acides
+ * aminés sans toucher au cadre de lecture ; sinon il le décale, et la conséquence
+ * rejoint celle d'un frameshift. C'est la question que pose PVS1 juste après avoir
+ * constaté l'atteinte du site, et aucun des chiffres déjà calculés ici n'y répond :
+ * `exonLength` est la longueur de l'exon **touché**, qui n'est pas l'exon sauté dès que
+ * la variation est intronique.
+ *
+ * La longueur comptée est la **part codante** de l'exon, et non l'exon entier : sur les
+ * exons qui bordent le CDS les deux diffèrent, et c'est la part codante qui porte le
+ * cadre de lecture. Quand le saut emporterait en plus le codon d'initiation ou le codon
+ * stop, la phase ne décrit plus la conséquence : `carries` le dit, pour que l'interface
+ * le dise aussi plutôt que d'annoncer un rassurant « en phase ».
+ *
+ * Le saut d'exon n'est qu'une des conséquences possibles d'une variation d'épissage —
+ * rétention d'intron, site cryptique —, et rien ici ne le vérifie : ce module ne connaît
+ * que la géométrie du transcrit. L'interface le dit aussi.
+ *
+ * @returns {object|null} `null` hors d'une variation d'épissage ;
+ *   sinon { exons, side, certain, coding, inFrame, residues, carries }.
+ */
+export function exonSkipping(st, loc) {
+  if (!st || !loc || st.total < 2) return null;
+  const picked = skippedExons(st, loc);
+  if (!picked) return null;
+  const exons = picked.numbers.map((n) => st.exons[n - 1]).filter(Boolean);
+  if (!exons.length) return null;
+
+  const coding = exons.reduce((a, e) => a + codingLength(st, e), 0);
+  // Codon d'initiation et codon stop : sur le brin −, l'ATG est à la borne génomique
+  // **haute** du CDS et le stop à la basse. Les prendre dans l'ordre du génome
+  // intervertirait les deux messages sur un gène sur deux.
+  const atg = st.strand === 1 ? st.cdsStart : st.cdsEnd;
+  const stop = st.strand === 1 ? st.cdsEnd : st.cdsStart;
+  const covers = (g) => exons.some((e) => g >= e.start && g <= e.end);
+  const inFrame = coding > 0 && coding % 3 === 0;
+
+  return {
+    exons: picked.numbers,
+    side: picked.side,
+    certain: picked.certain,
+    coding,
+    inFrame,
+    residues: inFrame ? coding / 3 : null,
+    carries: st.coding
+      ? ['start', 'stop'].filter((k) => covers(k === 'start' ? atg : stop))
+      : [],
   };
 }
 

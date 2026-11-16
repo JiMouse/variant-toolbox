@@ -312,6 +312,10 @@ textarea {
 .sch-exon.hit { fill: var(--accent); opacity: 0.35; }
 .sch-exon.cds.hit { fill: var(--accent); opacity: 1; }
 
+/* L'exon dont le saut est en question : un cadre neutre, qui désigne sans qualifier —
+   la phase, elle, est écrite au-dessus du schéma et porte la couleur. */
+.sch-skip { fill: none; stroke: var(--ink); stroke-width: 1.1; stroke-dasharray: 4 2; opacity: 0.6; }
+
 .sch-junction { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; }
 .sch-junction-label { fill: var(--muted); font-size: 12px; }
 
