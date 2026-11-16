@@ -140,6 +140,8 @@ export const UI = {
     schemaDonor: 'exon {n} / intron {n}',
     schemaAcceptor: 'intron {p} / exon {n}',
     schemaVariant: 'variation',
+    // La variation posée sur la jonction : une seule étiquette pour un seul repère.
+    schemaVariantOn: 'variation — {j}',
     schemaOnJunction: 'jonction',
     bpShort: '{n} pb',
     siteDonor: 'donneur',
@@ -335,6 +337,7 @@ export const UI = {
     schemaDonor: 'exon {n} / intron {n}',
     schemaAcceptor: 'intron {p} / exon {n}',
     schemaVariant: 'variant',
+    schemaVariantOn: 'variant — {j}',
     schemaOnJunction: 'junction',
     bpShort: '{n} bp',
     siteDonor: 'donor',

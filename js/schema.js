@@ -30,10 +30,20 @@ function text(str, x, y, cls, anchor = 'middle') {
   return node;
 }
 
-/** Étiquette recentrée pour ne pas sortir du cadre. */
+/**
+ * Demi-largeur d'un caractère, en unités de viewBox.
+ *
+ * Le SVG est tracé sur 1 000 unités et affiché au plus étroit sur 680 px (`.sch`), où
+ * un caractère de 13 px en pèse une dizaine. Majorer est sans conséquence — l'étiquette
+ * se décale un peu plus tôt — là où minorer la fait couper par le bord du cadre.
+ */
+const HALF_CHAR = 5;
+
+/** Étiquette recentrée pour ne pas sortir du cadre, d'autant plus tôt qu'elle est longue. */
 function labelAt(str, x, y, cls) {
-  if (x < 70) return text(str, 2, y, cls, 'start');
-  if (x > W - 70) return text(str, W - 2, y, cls, 'end');
+  const half = Math.min(W / 2, str.length * HALF_CHAR);
+  if (x < half) return text(str, 2, y, cls, 'start');
+  if (x > W - half) return text(str, W - 2, y, cls, 'end');
   return text(str, x, y, cls);
 }
 
@@ -166,7 +176,7 @@ export function geneSchema(st, loc, { lang = 'fr', skip = null } = {}) {
   s.append(text("3'", W - 2, TOP - 16, 'sch-end', 'end'));
 
   // L'épingle de la variation, posée à sa place réelle dans l'exon ; pour une
-  // variation intronique, au milieu du trait entre les deux exons.
+  // variation intronique, du côté de la jonction dont elle est proche.
   const mark = markX(st, loc, placed, k);
   if (mark !== null) {
     s.append(el('line', { class: 'sch-mark', x1: mark, y1: TOP - 11, x2: mark, y2: TOP + BOX + 5 }));
@@ -194,13 +204,30 @@ function markX(st, loc, placed, k) {
     const a = placed.find((q) => q.e.number === loc.intron);
     const b = placed.find((q) => q.e.number === loc.intron + 1);
     if (!a || !b) return null;
-    return a.x + a.w + (INTRON_W * k) / 2;
+    /* Position **relative** dans l'intron, et non son milieu.
+     *
+     * Posée au milieu, l'épingle dessinait `c.548+1` et `c.548+1700` au même endroit :
+     * le schéma montrait un intron profond là où la variation est sur le site donneur,
+     * c'est-à-dire dans le cas où cette vue doit le moins se tromper. Ces neuf unités
+     * restent hors échelle et ne mesurent aucune distance ; la fraction ne dit pas
+     * combien de paires de bases, elle dit **de quel bord** la variation est proche,
+     * et c'est ce qui manquait. Le décalage chiffré est dans l'étiquette. */
+    const frac = loc.offsetDonor + loc.offsetAcceptor > 0
+      ? loc.offsetDonor / (loc.offsetDonor + loc.offsetAcceptor)
+      : 0.5;
+    return a.x + a.w + frac * (INTRON_W * k);
   }
   return null;
 }
 
 function locLabel(st, loc, lang) {
-  if (loc.kind === 'intron') return `${t(lang, 'intron')} ${loc.intron}`;
+  if (loc.kind === 'intron') {
+    // Le décalage HGVS écrit en toutes lettres : un intron hors échelle ne saura jamais
+    // distinguer à l'œil un +1 d'un +1 700, l'étiquette le fait.
+    const n = loc.nearest ? loc.nearest.offset : null;
+    const sign = loc.nearest && loc.nearest.side === 'acceptor' ? '−' : '+';
+    return `${t(lang, 'intron')} ${loc.intron}${n === null ? '' : ` (${sign}${n})`}`;
+  }
   if (loc.kind === 'junction') return t(lang, 'schemaOnJunction');
   if (loc.exon) return `${t(lang, 'exon')} ${loc.exon}`;
   return '';
@@ -239,6 +266,27 @@ export function zoomSchema(st, loc, { lang = 'fr' } = {}) {
 
   // Trait d'intron sur toute la fenêtre, recouvert par les boîtes d'exon.
   s.append(el('line', { class: 'sch-intron', x1: 0, y1: mid, x2: W, y2: mid }));
+
+  // Repère de la variation, mesuré avant de dessiner quoi que ce soit : c'est lui qui
+  // décide quelles jonctions ont encore un trait à tracer (voir `coincides`).
+  const [vx1, vx2] = xRange(loc.span.start, loc.span.end);
+  const vw = Math.max(2, vx2 - vx1);
+  const vc = (vx1 + vx2) / 2;
+  /* Jonction confondue avec la variation : **une** marque, et non deux.
+   *
+   * Sur `c.548+1G>A`, le trait de jonction tombe exactement sur le bord du rectangle de
+   * la variation et dans la même couleur : on lisait deux repères rouges pour un seul
+   * fait, le trait débordant du rectangle en haut et en bas comme s'il le barrait, et
+   * les deux étiquettes, posées l'une sous l'autre, se lisaient comme les deux lignes
+   * d'une même légende. Une jonction emportée par une délétion donnait la même image en
+   * plus large : le trait passe sous le rectangle, qui le recouvre, et seuls ses
+   * débords dépassent.
+   *
+   * Dès que la jonction tombe sur le rectangle, c'est donc le rectangle qui la montre —
+   * et le bord de la boîte d'exon avec lui. Le trait n'ajoute rien ; son nom, lui, est
+   * gardé et rejoint l'étiquette de la variation. */
+  const merged = [];
+  const coincides = (x) => x >= vx1 - 1 && x <= vx1 + vw + 1;
 
   // Graduation à la base, quand la fenêtre est assez courte pour qu'on puisse compter :
   // c'est ce qui permet de vérifier à l'œil un « 1 pb » ou un « 3 pb » annoncé.
@@ -279,13 +327,16 @@ export function zoomSchema(st, loc, { lang = 'fr' } = {}) {
     // frôle : c'est elle que le schéma doit faire ressortir.
     const flag = (b) => loc.nearest && loc.nearest.boundary === b
       && ['edge', 'canonical', 'junction'].includes(loc.edge);
-    if (e.number < st.total && donorBase >= ws && donorBase <= we) {
-      junction(s, xOf(uLo(donorBase) + 1), TOP, BOX,
-        t(lang, 'schemaDonor', { n: e.number }), flag(donorBase));
-    }
+    const mark = (x, label, flagged) => {
+      if (coincides(x)) merged.push(label);
+      else junction(s, x, TOP, BOX, label, flagged);
+    };
     if (e.number > 1 && accBase >= ws && accBase <= we) {
-      junction(s, xOf(uLo(accBase)), TOP, BOX,
-        t(lang, 'schemaAcceptor', { p: e.number - 1, n: e.number }), flag(accBase));
+      mark(xOf(uLo(accBase)), t(lang, 'schemaAcceptor', { p: e.number - 1, n: e.number }),
+        flag(accBase));
+    }
+    if (e.number < st.total && donorBase >= ws && donorBase <= we) {
+      mark(xOf(uLo(donorBase) + 1), t(lang, 'schemaDonor', { n: e.number }), flag(donorBase));
     }
     // Nom de l'exon calé à gauche de sa boîte, et non centré : centré, il se place à
     // l'aplomb de la cote — elle aussi centrée — et les deux textes se lisent comme
@@ -296,25 +347,26 @@ export function zoomSchema(st, loc, { lang = 'fr' } = {}) {
   }
 
   // La variation : un trait pour une substitution, une boîte pour un indel.
-  const [vx1, vx2] = xRange(loc.span.start, loc.span.end);
-  const vw = Math.max(2, vx2 - vx1);
   s.append(el('rect', {
     class: 'sch-var', x: vx1, y: TOP - 6, width: vw, height: BOX + 12, rx: 1,
   }));
-  const vc = (vx1 + vx2) / 2;
-  // Une ligne au-dessus des étiquettes de jonction : posées à la même hauteur, elles
-  // se chevauchent exactement dans le cas qui compte le plus — la variation sur la
-  // bordure, donc à l'aplomb de la jonction.
-  s.append(labelAt(t(lang, 'schemaVariant'), vc, TOP - 26, 'sch-pin'));
+  // Une ligne au-dessus des étiquettes de jonction, qui restent lisibles quand la
+  // variation les longe sans les toucher — `c.548+5`, où les deux repères sont à cinq
+  // bases l'un de l'autre. Quand la jonction est **sous** la variation, elle n'a plus
+  // de trait et son nom passe ici, sur une seule ligne.
+  s.append(labelAt(merged.length
+    ? t(lang, 'schemaVariantOn', { j: merged.join(' · ') })
+    : t(lang, 'schemaVariant'), vc, TOP - 26, 'sch-pin'));
 
-  // Cotes : de la variation à chaque jonction présente dans la fenêtre, sous la ligne
-  // des numéros d'exon — superposées, les deux textes se recouvrent exactement sur un
-  // exon large, où l'étiquette d'exon est centrée comme l'est celle de la cote.
+  // Cotes : de chaque jonction présente dans la fenêtre jusqu'à la base que le chiffre
+  // compte, sous la ligne des numéros d'exon — superposées, les deux textes se
+  // recouvrent exactement sur un exon large, où l'étiquette d'exon est centrée comme
+  // l'est celle de la cote.
   let y = TOP + BOX + 40;
   for (const d of dimensions(st, loc)) {
-    const bx = xOf(d.at);
-    dimension(s, Math.min(vc, bx), Math.max(vc, bx), y,
-      t(lang, 'bpShort', { n: d.bp }), d.edge);
+    const a = xOf(d.at);
+    const b = xOf(d.from);
+    dimension(s, Math.min(a, b), Math.max(a, b), y, t(lang, 'bpShort', { n: d.bp }), d.edge);
     y += 18;
   }
   return s;
@@ -340,28 +392,37 @@ function dimension(s, x1, x2, y, label, edge) {
 /**
  * Cotes à tracer : jonction, distance en pb, et si cette distance vaut « bordure ».
  * Le bord de la fenêtre (`uLo`) sert d'abscisse, pour rester sur la même échelle.
+ *
+ * Chaque cote court de la jonction (`at`) jusqu'à la base que le chiffre compte
+ * (`from`), soit exactement `bp` bases de graduation — et non jusqu'au centre du
+ * rectangle de la variation, qui sur un « 1 pb » dessinait une cote d'une demi-base
+ * sous un chiffre qui en annonce une. La graduation n'est là que pour qu'on puisse
+ * compter : elle doit tomber juste.
  */
 function dimensions(st, loc) {
   const out = [];
   const inWindow = (g) => g >= loc.window.start && g <= loc.window.end;
-  const push = (base, after, bp, edge) => {
+  // `toward` : de quel côté de la jonction sont les bases comptées, dans le sens du
+  // transcrit — l'exon avant le site donneur, l'intron après, et l'inverse en 5'.
+  const push = (base, after, bp, edge, toward) => {
     if (!bp || !inWindow(base)) return;
     const u = st.strand === 1 ? base - loc.window.start : loc.window.end - base;
-    out.push({ at: u + (after ? 1 : 0), bp, edge });
+    const at = u + (after ? 1 : 0);
+    out.push({ at, from: at + toward * bp, bp, edge });
   };
   if (loc.kind === 'exon') {
     const e = st.exons[loc.exon - 1];
     const donorBase = st.strand === 1 ? e.end : e.start;
     const accBase = st.strand === 1 ? e.start : e.end;
-    push(donorBase, true, loc.dist3, loc.dist3 !== null && loc.dist3 < 3);
-    push(accBase, false, loc.dist5, loc.dist5 !== null && loc.dist5 < 3);
+    push(donorBase, true, loc.dist3, loc.dist3 !== null && loc.dist3 < 3, -1);
+    push(accBase, false, loc.dist5, loc.dist5 !== null && loc.dist5 < 3, 1);
   } else if (loc.kind === 'intron') {
     const prev = st.exons[loc.intron - 1];
     const next = st.exons[loc.intron];
     const donorBase = st.strand === 1 ? prev.end : prev.start;
     const accBase = st.strand === 1 ? next.start : next.end;
-    push(donorBase, true, loc.offsetDonor, loc.offsetDonor <= 2);
-    push(accBase, false, loc.offsetAcceptor, loc.offsetAcceptor <= 2);
+    push(donorBase, true, loc.offsetDonor, loc.offsetDonor <= 2, 1);
+    push(accBase, false, loc.offsetAcceptor, loc.offsetAcceptor <= 2, -1);
   }
   return out;
 }

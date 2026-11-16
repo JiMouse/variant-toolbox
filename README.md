@@ -267,6 +267,25 @@ mesure est la distance réelle. Les deux schémas sont dessinés **dans le sens 
 transcrit** — la gauche est le 5', y compris sur un gène du brin −, où les coordonnées
 génomiques décroissent.
 
+Une variation intronique s'épingle **du côté de la jonction dont elle est proche**, et
+non au milieu de l'intron : au milieu, `c.548+1G>A` et un intron profond se dessinaient
+au même endroit, et le schéma montrait une variation perdue au cœur de l'intron là où
+elle est posée sur le site donneur. La fraction ne mesure toujours aucune distance — ces
+neuf unités restent hors échelle — elle dit de quel bord la variation est proche ; le
+décalage chiffré, lui, est écrit dans l'étiquette : `intron 4 (+1)`.
+
+**Un fait, un repère.** Au zoom, le trait de jonction et le rectangle de la variation
+tombent au même endroit dès que la variation touche la bordure, dans la même couleur, le
+trait débordant du rectangle en haut et en bas comme s'il le barrait : on lisait deux
+repères rouges pour un seul fait, et les deux étiquettes posées l'une sous l'autre se
+lisaient comme les deux lignes d'une même légende. Quand la jonction tombe **sous** le
+rectangle, elle n'a donc plus de trait — le bord de la boîte d'exon la montre déjà — et
+son nom rejoint l'étiquette de la variation : « variation — exon 4 / intron 4 ». Une
+délétion qui emporte une jonction, ou un exon entier, donnait la même image en plus
+large et suit la même règle. Les cotes, elles, courent de la jonction jusqu'à la base
+que le chiffre compte, soit exactement autant de bases que la graduation en montre :
+un « 1 pb » dessinait auparavant une demi-base.
+
 **Source.** La structure vient de l'API UCSC (piste `ncbiRefSeq`, `Access-Control-Allow-Origin: *`),
 interrogée sur **une seule base** : l'API renvoie tout enregistrement qui *chevauche*
 l'intervalle, donc le transcrit entier dès lors que la variation tombe dedans.
