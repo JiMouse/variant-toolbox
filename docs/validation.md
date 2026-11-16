@@ -329,10 +329,30 @@ critères cliniques (`PP4`, `BP5`), co-occurrence (`PM3`, `BP2`), ségrégation 
 localisation (`PS1`, `PM5`), prédictions (aucune case — déjà étayées), données
 fonctionnelles (`PS3`, `BS3`).
 
+La rubrique des prédictions n'a pas de case : l'application la remplit, et la phrase est
+calculée sur la variation. Vérifié sur l'application servie en local :
+
+| Saisie | Type | Phrase rendue |
+|---|---|---|
+| TP53 `chr17-7675088-C-T` | faux-sens | « Verdict des outils qui l'ont notée : délétère (SIFT, PolyPhen-2, CADD, REVEL, MetaLR, AlphaMissense). PP3 est posé plus haut sur ces chiffres. » |
+| TP53 `c.376-1G>A` | site accepteur | « Ne s'applique pas à ce type de variation (…) : SIFT, PolyPhen-2, REVEL, MetaLR et AlphaMissense ne notent que le changement d'acide aminé. Verdict des outils qui l'ont notée : délétère (CADD, SpliceAI). PP3 est posé plus haut… » |
+| CFTR `c.1521_1523del` | inframe | « Un seul outil l'a notée (SpliceAI, toléré) : pas assez pour affirmer une direction. Aucun critère n'est posé sur ces chiffres. » |
+| TP53 `c.1182A>G` | codon stop | ne s'applique pas, puis « discordant (délétère : CADD ; toléré : SpliceAI) » |
+| TP53 `c.-28C>T` | région d'épissage | ne s'applique pas, puis un seul outil |
+
+La troisième ligne est le garde-fou du verdict (`MIN_TOOLS_FOR_DIRECTION`, js/comment.js)
+dit en clair : p.Phe508del n'est notée que par SpliceAI, et « discordant (délétère : —) »
+l'aurait mal dit.
+
 Vérifié sur l'application, `chr17-7675088-C-T` : **18 cases**, les deux critères posés
 par les chiffres cochés d'avance (`PM1`, `PP3`), les seize autres décochées, et les neuf
-rubriques dans l'ordre du référentiel. Huit vérifications hors réseau de plus (170) :
-l'ordre des rubriques, l'ordre des critères, l'absence de doublon, l'absence de
-chevauchement avec les onze critères que l'application sait poser, et l'existence des
-libellés dans les deux langues — ces clés-là sont construites dans la structure, donc
-invisibles à la vérification de couverture qui lit les appels littéraux à `t`.
+rubriques dans l'ordre du référentiel.
+
+Dix-huit vérifications hors réseau de plus (180). Sur le plan : l'ordre des rubriques,
+l'ordre des critères, l'absence de doublon, l'absence de chevauchement avec les onze
+critères que l'application sait poser, et l'existence des libellés dans les deux
+langues — ces clés-là sont construites dans la structure, donc invisibles à la
+vérification de couverture, qui ne lit que les appels littéraux à `t`. Sur la phrase des
+prédictions : ses six formes (applicable ou non, délétère, toléré, discordant, un seul
+outil, aucun outil), le critère qu'elle nomme ou son absence, et le silence tant qu'une
+source est en vol.

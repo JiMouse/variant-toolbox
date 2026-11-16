@@ -170,8 +170,19 @@ export const UI = {
     acmgTopicLocation: 'Localisation du variant',
     acmgTopicPredictions: 'Prédictions bio-informatiques',
     acmgTopicFunctional: 'Données fonctionnelles',
-    acmgPredictionsCovered: 'Déjà étayées par l’application : les prédicteurs et SpliceAI '
-      + 'sont interrogés à chaque analyse, et leur verdict est posé plus haut (PP3/BP4).',
+    // La seule rubrique du plan que l'application remplit elle-même : pas de case,
+    // une phrase calculée (voir `predictionsLine`, js/acmg.js).
+    acmgPredNA: 'Ne s’applique pas à ce type de variation ({type}) : SIFT, PolyPhen-2, '
+      + 'REVEL, MetaLR et AlphaMissense ne notent que le changement d’acide aminé.',
+    acmgPredDel: 'Verdict des outils qui l’ont notée : délétère ({list}).',
+    acmgPredTol: 'Verdict des outils qui l’ont notée : toléré ({list}).',
+    acmgPredDiscordant: 'Verdict des outils qui l’ont notée : discordant '
+      + '(délétère : {del} ; toléré : {tol}).',
+    acmgPredSingle: 'Un seul outil l’a notée ({tool}, {verdict}) : pas assez pour '
+      + 'affirmer une direction.',
+    acmgPredNoTool: 'Aucun outil n’a noté cette variation.',
+    acmgPredPosted: '{code} est posé plus haut sur ces chiffres.',
+    acmgPredNoCriterion: 'Aucun critère n’est posé sur ces chiffres.',
     // Les critères à cocher, dans la langue du référentiel.
     acmgCritPS4: 'prévalence significativement plus élevée chez les patients que dans '
       + 'les témoins',
@@ -473,8 +484,17 @@ export const UI = {
     acmgTopicLocation: 'Location of the variant',
     acmgTopicPredictions: 'In silico predictions',
     acmgTopicFunctional: 'Functional data',
-    acmgPredictionsCovered: 'Already supported by the application: the predictors and '
-      + 'SpliceAI are queried on every analysis, and their verdict is set above (PP3/BP4).',
+    acmgPredNA: 'Does not apply to this variant type ({type}): SIFT, PolyPhen-2, REVEL, '
+      + 'MetaLR and AlphaMissense only score the amino acid change.',
+    acmgPredDel: 'Verdict of the tools that scored it: deleterious ({list}).',
+    acmgPredTol: 'Verdict of the tools that scored it: tolerated ({list}).',
+    acmgPredDiscordant: 'Verdict of the tools that scored it: discordant '
+      + '(deleterious: {del}; tolerated: {tol}).',
+    acmgPredSingle: 'Only one tool scored it ({tool}, {verdict}): not enough to state a '
+      + 'direction.',
+    acmgPredNoTool: 'No tool scored this variant.',
+    acmgPredPosted: '{code} is set above on these figures.',
+    acmgPredNoCriterion: 'No criterion is set on these figures.',
     acmgCritPS4: 'prevalence significantly higher in patients than in controls',
     acmgCritPP4: 'phenotype or family history highly specific to the gene',
     acmgCritBP5: 'alternate molecular cause found in the patient',

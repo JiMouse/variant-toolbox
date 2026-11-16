@@ -50,6 +50,20 @@ const SILENT_TYPES = ['synonymous', 'intronic'];
 const DOMAIN_TYPES = ['missense', 'inframe'];
 
 /**
+ * Types que les prédicteurs de pathogénicité savent noter.
+ *
+ * SIFT, PolyPhen-2, REVEL, MetaLR et AlphaMissense ne notent **que** le changement
+ * d'acide aminé : sur un non-sens, un frameshift ou une variation intronique ils
+ * rendent « n.a. », et la rubrique des prédictions du référentiel ne s'applique pas
+ * telle quelle. CADD et SpliceAI, eux, notent tous les types — c'est pourquoi la
+ * phrase rendue dit toujours quels outils ont réellement noté la variation.
+ */
+const PREDICTED_TYPES = ['missense', 'inframe'];
+
+/** Liste vide d'un côté du verdict : « — » plutôt qu'un blanc. */
+const NONE = '—';
+
+/**
  * Localisation en clair — « exon 50/58 », « intron 22/26 ».
  * `locField` porte déjà « 50/58 » quand le total est connu, « 50 » sinon.
  */
@@ -96,6 +110,56 @@ function skipClause(skip, lang) {
 function recessive(phenotypes) {
   const list = (phenotypes && phenotypes.phenotypes) || [];
   return list.some((p) => p.inheritance === 'AR' || p.inheritance === 'XLR');
+}
+
+/**
+ * La rubrique « Prédictions bio-informatiques » du plan ANPGM, calculée.
+ *
+ * C'est la seule rubrique du plan que l'application peut remplir elle-même, puisque
+ * les outils sont interrogés à chaque analyse. Elle n'a donc pas de case à cocher mais
+ * une phrase, et cette phrase dit trois choses dans l'ordre : si les prédicteurs de
+ * pathogénicité s'appliquent à ce type de variation, ce que disent ceux qui l'ont
+ * notée, et quel critère en est tiré — ou qu'aucun ne l'est.
+ *
+ * `null` tant que MyVariant ou SpliceAI n'ont pas répondu : l'encart affiche alors
+ * l'attente, et non un verdict qui pourrait encore changer de camp.
+ */
+function predictionsLine(ctx, v, supported, lang, answered) {
+  if (!answered('mv') || !answered('splice')) return null;
+
+  const parts = [];
+  // Le type n'est pas toujours connu (repli dégradé) : on ne dit alors rien de
+  // l'applicabilité, plutôt que d'affirmer qu'elle manque.
+  if (v.varType && !PREDICTED_TYPES.includes(v.varType)) {
+    parts.push(t(lang, 'acmgPredNA', { type: varTypeLabel(v, lang) }));
+  }
+
+  const verdict = predictionVerdict(ctx.predictions || []);
+  if (!verdict.any) {
+    parts.push(t(lang, 'acmgPredNoTool'));
+  } else if (verdict.kind === 'pathogenic') {
+    parts.push(t(lang, 'acmgPredDel', { list: verdict.del.join(', ') }));
+  } else if (verdict.kind === 'benign') {
+    parts.push(t(lang, 'acmgPredTol', { list: verdict.tol.join(', ') }));
+  } else if (verdict.del.length + verdict.tol.length === 1) {
+    // Un seul outil ne fait pas une direction : c'est le garde-fou
+    // MIN_TOOLS_FOR_DIRECTION (js/comment.js), et « discordant (délétère : —) » le
+    // dirait mal. Cas réel : p.Phe508del, que seul SpliceAI note.
+    const only = verdict.del[0] || verdict.tol[0];
+    parts.push(t(lang, 'acmgPredSingle', {
+      tool: only, verdict: t(lang, verdict.del.length ? 'del' : 'tol'),
+    }));
+  } else {
+    parts.push(t(lang, 'acmgPredDiscordant', {
+      del: verdict.del.join(', ') || NONE, tol: verdict.tol.join(', ') || NONE,
+    }));
+  }
+
+  const posted = supported.find((c) => c.code === 'PP3' || c.code === 'BP4');
+  parts.push(posted
+    ? t(lang, 'acmgPredPosted', { code: posted.code })
+    : t(lang, 'acmgPredNoCriterion'));
+  return parts.join(' ');
 }
 
 /**
@@ -235,7 +299,13 @@ export function buildAcmg(ctx, { lang = 'fr', gnomadVersion = 'v4.1', skip = nul
     }
   }
 
-  return { supported, waiting };
+  return {
+    supported,
+    waiting,
+    // La rubrique des prédictions est calculée après coup : elle dit, entre autres,
+    // quel critère a été tiré de ces chiffres (voir `predictionsLine`).
+    predictions: predictionsLine(ctx, v, supported, lang, answered),
+  };
 }
 
 /**
@@ -293,7 +363,7 @@ export const TO_SPECIFY = [
       { code: 'PM5', label: 'acmgCritPM5' },
     ],
   },
-  { topic: 'acmgTopicPredictions', criteria: [], note: 'acmgPredictionsCovered' },
+  { topic: 'acmgTopicPredictions', criteria: [], computed: 'predictions' },
   {
     topic: 'acmgTopicFunctional',
     criteria: [

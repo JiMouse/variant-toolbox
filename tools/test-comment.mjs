@@ -558,8 +558,8 @@ check('aucun critère en double', new Set(topicCodes).size, topicCodes.length);
 // Les prédictions gardent leur rubrique et n'ont aucune case : elles sont déjà étayées.
 check('les prédictions n’ont pas de case',
   TO_SPECIFY.find((sec) => sec.topic === 'acmgTopicPredictions').criteria.length, 0);
-check('et disent pourquoi',
-  Boolean(TO_SPECIFY.find((sec) => sec.topic === 'acmgTopicPredictions').note), true);
+check('mais une phrase calculée',
+  TO_SPECIFY.find((sec) => sec.topic === 'acmgTopicPredictions').computed, 'predictions');
 
 // Un critère ne doit pas être à la fois posé par un chiffre et demandé au biologiste.
 const postable = ['PVS1', 'PVS1_Moderate', 'PM1', 'PM2_Supporting', 'PM4', 'PP3', 'BA1',
@@ -569,10 +569,48 @@ check('aucun chevauchement avec les critères que l’application pose',
 
 // Les libellés des deux langues, pour des clés construites dans la structure et non
 // dans un appel littéral à `t` : la vérification de couverture ne les voit pas.
-const topicKeys = TO_SPECIFY.flatMap((sec) => [sec.topic, sec.note,
+const topicKeys = TO_SPECIFY.flatMap((sec) => [sec.topic,
   ...sec.criteria.map((c) => c.label)].filter(Boolean));
 check('tous les libellés du plan existent en FR et EN',
   topicKeys.filter((k) => !(k in UI.fr) || !(k in UI.en)).join(',') || '—', '—');
+
+/* — La rubrique des prédictions, calculée plutôt que renvoyée plus haut —
+ *
+ * Les prédicteurs de pathogénicité ne notent que le changement d'acide aminé : hors
+ * faux-sens et inframe, la rubrique du référentiel ne s'applique pas telle quelle, et
+ * la phrase doit le dire avant de rendre le verdict des outils qui, eux, ont noté. */
+const predLine = (over = {}, opts = {}) => buildAcmg(ctx(over), { lang: 'fr', ...opts }).predictions;
+
+check('faux-sens : la rubrique s’applique, et le critère en est tiré', predLine(),
+  'Verdict des outils qui l’ont notée : délétère (CADD, REVEL). PP3 est posé plus haut sur ces chiffres.');
+contains('non-sens : la rubrique ne s’applique pas',
+  predLine({ variant: { varType: 'nonsense', varTypeNull: true } }),
+  'Ne s’applique pas à ce type de variation (variation non-sens) : SIFT, PolyPhen-2, REVEL, MetaLR et AlphaMissense ne notent que le changement d’acide aminé.');
+// …ce qui n'empêche pas CADD et SpliceAI d'avoir noté, ni le critère d'être posé.
+contains('non-sens : le verdict des outils qui ont noté est rendu quand même',
+  predLine({ variant: { varType: 'nonsense', varTypeNull: true } }),
+  'Verdict des outils qui l’ont notée : délétère (CADD, REVEL). PP3 est posé plus haut');
+check('inframe : la rubrique s’applique',
+  predLine({ variant: { varType: 'inframe', varTypeNull: false } }).startsWith('Verdict'), true);
+check('aucun outil n’a noté', predLine({ predictions: [] }),
+  'Aucun outil n’a noté cette variation. Aucun critère n’est posé sur ces chiffres.');
+check('discordants : les deux côtés, et aucun critère',
+  predLine({ predictions: [pred('REVEL', 'del', 0.9), pred('MetaLR', 'tol', 0.1)] }),
+  'Verdict des outils qui l’ont notée : discordant (délétère : REVEL ; toléré : MetaLR). '
+  + 'Aucun critère n’est posé sur ces chiffres.');
+// Un seul outil : le garde-fou du verdict, dit en clair plutôt qu'en « délétère : — ».
+check('un seul outil l’a notée',
+  predLine({ predictions: [pred('SpliceAI', 'tol', 0.01)] }),
+  'Un seul outil l’a notée (SpliceAI, toléré) : pas assez pour affirmer une direction. '
+  + 'Aucun critère n’est posé sur ces chiffres.');
+check('toléré : BP4 nommé',
+  predLine({ predictions: [pred('REVEL', 'tol', 0.1), pred('CADD', 'tol', 3)] }),
+  'Verdict des outils qui l’ont notée : toléré (REVEL, CADD). BP4 est posé plus haut sur ces chiffres.');
+// Une source en vol ne rend pas de phrase : l'encart affiche l'attente.
+check('sources en vol : rien à dire encore',
+  buildAcmg({ ...ctx(), pending: ['splice'] }, { lang: 'fr' }).predictions, null);
+check('EN', buildAcmg(ctx(), { lang: 'en' }).predictions,
+  'Verdict of the tools that scored it: deleterious (CADD, REVEL). PP3 is set above on these figures.');
 
 /* — Course entre source principale et repli — */
 const later = (v, ms) => () => new Promise((r) => setTimeout(() => r(v), ms));

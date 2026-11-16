@@ -362,13 +362,28 @@ Quatre listes, et la frontière entre elles porte autant que leur contenu.
    | Variation affectant la longueur de la protéine | `BP3` |
    | Type et contexte de la variation | `PP2`, `BP1` |
    | Localisation du variant | `PS1`, `PM5` |
-   | Prédictions bio-informatiques | *(aucune case : déjà étayées plus haut)* |
+   | Prédictions bio-informatiques | *(aucune case : rubrique calculée, voir plus bas)* |
    | Données fonctionnelles | `PS3`, `BS3` |
 
-   La rubrique des prédictions garde sa place **sans aucune case** : les prédicteurs et
-   SpliceAI sont interrogés à chaque analyse et leur verdict est posé dans la première
-   liste. Un titre sans case le dit mieux qu'un titre absent, qui laisserait croire à un
-   oubli.
+   La rubrique des prédictions garde sa place **sans aucune case** : c'est la seule du
+   plan que l'application remplit elle-même, et elle le dit en une phrase calculée sur
+   la variation en cours :
+
+   - **hors faux-sens et inframe** — « Ne s'applique pas à ce type de variation
+     (*variation au niveau du site accepteur d'épissage*) : SIFT, PolyPhen-2, REVEL,
+     MetaLR et AlphaMissense ne notent que le changement d'acide aminé. » Ces cinq-là
+     sont des prédicteurs de faux-sens ; CADD et SpliceAI, eux, notent tous les types,
+     et la phrase continue donc avec ce qu'ils disent ;
+   - **le verdict des outils qui ont noté** — « délétère (CADD, SpliceAI) », « toléré
+     (…) », « discordant (délétère : … ; toléré : …) », ou « un seul outil l'a notée
+     (SpliceAI, toléré) : pas assez pour affirmer une direction » — ce dernier cas
+     étant le garde-fou du verdict (`MIN_TOOLS_FOR_DIRECTION`), rencontré sur
+     `p.Phe508del` ;
+   - **ce qui en est tiré** — « PP3 est posé plus haut sur ces chiffres », ou « aucun
+     critère n'est posé sur ces chiffres ».
+
+   Tant que MyVariant ou SpliceAI n'ont pas répondu, la rubrique affiche l'attente : un
+   verdict qui peut encore changer de camp ne vaut pas mieux qu'une case vide.
 
 Puis un **contrôle automatique** : la classe et les critères d'InterVar, qui étaient
 jusqu'ici dans l'encart « Chiffres ». Contrôle et non conclusion — et InterVar ne traite

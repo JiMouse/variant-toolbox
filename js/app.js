@@ -520,7 +520,7 @@ function renderAcmg() {
   const box = $('acmg');
   box.textContent = '';
   acmgRows = [];
-  const { supported, waiting } = buildAcmg(ctx, {
+  const { supported, waiting, predictions } = buildAcmg(ctx, {
     lang,
     gnomadVersion: $('gnomadVersion').value,
     skip: currentSkip(),
@@ -565,6 +565,14 @@ function renderAcmg() {
   box.append(acmgTitle('acmgToSpecifyTitle'), acmgNote(t(lang, 'acmgToSpecifyHelp')));
   for (const section of TO_SPECIFY) {
     box.append(acmgTitle(section.topic, 'h4'));
+    // La rubrique des prédictions n'a pas de case : l'application l'a remplie, et sa
+    // phrase dit quel critère elle en a tiré (voir `predictionsLine`, js/acmg.js).
+    if (section.computed === 'predictions') {
+      const late = ['mv', 'splice'].filter((k) => isPending(k));
+      box.append(predictions
+        ? acmgNote(predictions)
+        : acmgNote(t(lang, 'waitingFor', { src: pendingLabels(late) }), 'help pending'));
+    }
     if (section.note) box.append(acmgNote(t(lang, section.note)));
     if (!section.criteria.length) continue;
     const wrap = document.createElement('div');
