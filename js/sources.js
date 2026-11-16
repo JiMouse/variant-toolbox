@@ -389,6 +389,30 @@ export function variantValidator(desc, selectTranscripts = 'mane_select') {
   return fetchJSON(url, { retries: 0, timeout: 12000 });
 }
 
+/**
+ * Transcrit **MANE Select** d'un gène, désigné par son symbole — repli de HGNC.
+ *
+ * `gene2transcripts_v2` accepte le symbole approuvé comme un symbole retiré (il rend
+ * alors `previous_symbol`), applique la même restriction `mane_select` que l'endpoint
+ * de validation, et porte l'accession RefSeq **versionnée** dans
+ * `transcripts[].reference`. Mesuré à 146 ms et ~1 KiB sous cette restriction, avec
+ * `Access-Control-Allow-Origin: *`.
+ *
+ * Trois réponses à distinguer, dont deux ne sont pas des pannes :
+ *   — `error: "Unable to recognise gene symbol …"` : le symbole n'existe pas ;
+ *   — `transcripts: []` : le gène existe et n'a pas de transcrit MANE Select
+ *     (micro-ARN par exemple) ;
+ *   — une ligne : le transcrit cherché.
+ *
+ * `gene2transcripts_v2` et non `gene2transcripts` : la version 1 rend les 203 KiB de
+ * `genomic_spans` dont on n'a ici aucun besoin (voir `exonTotal`, js/variant.js).
+ */
+export function variantValidatorGene(gene) {
+  const url = `${VV}/tools/gene2transcripts_v2/${encodeURIComponent(gene)}`
+    + '/mane_select/refseq/GRCh38?content_type=application/json';
+  return fetchJSON(url, { retries: 0, timeout: 12000 });
+}
+
 /** Structure exonique d'un transcrit — pour le total d'exons (« 5/11 »). */
 export function variantValidatorTranscript(transcript) {
   const url = `${VV}/tools/gene2transcripts/${encodeURIComponent(transcript)}`

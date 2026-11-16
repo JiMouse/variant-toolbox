@@ -9,19 +9,34 @@ Page statique, sans étape de build, hébergée sur GitHub Pages.
 
 ## Utilisation
 
-1. Saisir la variation, sous l'une des deux formes :
+1. Saisir la variation, sous l'une des quatre formes :
    - HGVS sur transcrit RefSeq — `NM_000546.6:c.524G>A` (le gène entre parenthèses
      est accepté : `NM_000546.6(TP53):c.524G>A`) ;
-   - pseudo-VCF hg38 — `chr17-7675088-C-T` (`17:7675088:C:T` fonctionne aussi).
+   - pseudo-VCF hg38 — `chr17-7675088-C-T` (`17:7675088:C:T` fonctionne aussi) ;
+   - HGVS génomique hg38 — `chr1:g.11117005T>A` (`1:g.…` et l'accession RefSeq
+     `NC_000001.11:g.…` fonctionnent aussi) ;
+   - gène + nomenclature, sans transcrit — `MTHFR:c.665C>T`.
 2. Choisir la classe (3, 4 ou 5).
 3. **Analyser.** Les chiffres, les liens et le commentaire s'affichent ;
    le bouton **Copier** du commentaire met celui-ci dans le presse-papier, et chaque
    nomenclature de l'encart **Identité de la variation** porte le sien (voir plus bas).
 
-Le choix du **transcrit** suit la saisie : une entrée VCF utilise le transcrit
-**MANE Select**, une entrée HGVS utilise le transcrit saisi, avec une indication
-MANE oui/non (et le transcrit MANE rappelé si ce n'est pas celui-là). Le **transcrit
-Ensembl** correspondant et sa nomenclature c. sont affichés à côté (voir plus bas).
+Le choix du **transcrit** suit la saisie : une entrée HGVS utilise le transcrit saisi,
+avec une indication MANE oui/non (et le transcrit MANE rappelé si ce n'est pas
+celui-là) ; les trois autres formes n'en nomment aucun et utilisent le transcrit
+**MANE Select**. Le **transcrit Ensembl** correspondant et sa nomenclature c. sont
+affichés à côté (voir plus bas).
+
+Pour les deux formes sans transcrit autres que le pseudo-VCF, **l'interface le dit** :
+une entrée `chr1:g.…` annonce le MANE Select sur lequel porte l'annotation, et une
+entrée `MTHFR:c.665C>T` annonce celui sur lequel la position c. a été **comptée** —
+c'est lui qui décide alors de quelle variation il s'agit, et non seulement de la
+nomenclature rendue. Le MANE Select du gène est lu chez **HGNC** (champ `mane_select`,
+~40 ms), avec **VariantValidator** (`gene2transcripts_v2`, ~150 ms) en repli ; les deux
+reconnaissent les symboles retirés (`MLL` → `KMT2A`), et le symbole d'aujourd'hui est
+alors signalé. Un gène inconnu, un gène sans transcrit MANE Select (micro-ARN) et deux
+services muets donnent trois messages distincts : ils ne se corrigent pas de la même
+façon.
 
 **Langue** : détectée depuis le navigateur, bouton FR/EN, choix mémorisé.
 Le commentaire suit la langue de l'interface.

@@ -251,3 +251,36 @@ Deux niveaux de résistance, tous deux observés en conditions réelles :
   (tableau ci-dessus).
 
 Détail des mesures et des alternatives écartées : [ensembl.md](ensembl.md).
+
+## 6. Saisies sans transcrit : HGVS g. et gène + c.
+
+Deux formes de saisie où aucun transcrit n'est nommé, et où c'est donc le **MANE
+Select** qui est annoté (16/11/2026, les deux chemins de normalisation exercés) :
+
+| Saisie | Transcrit retenu | MANE | Sortie |
+|---|---|---|---|
+| `chr1:g.11117005T>A` | NM_004958.4 (MTOR) | oui | `c.7015A>T` p.(Arg2339Ter), non-sens, exon 50, 1-11117005-T-A |
+| `1:g.11117005T>A` | NM_004958.4 | oui | **identique** — le préfixe `chr` est facultatif |
+| `NC_000017.11:g.7675088C>T` | NM_000546.6 (TP53) | oui | `c.524G>A` p.(Arg175His), faux-sens, exon 5 — identique à `chr17-7675088-C-T` |
+| `chr7:g.117559593_117559595del` | NM_000492.4 (CFTR) | oui | `c.1522_1524del` p.(Phe508del), exon 11, 7-117559592-CTTT-C — **même sortie par VEP et par le repli** |
+| `MTHFR:c.665C>T` | NM_005957.5 | oui | **sortie identique, champ par champ**, à celle de `NM_005957.5:c.665C>T` (152 ms contre 215 ms) |
+| `H19:n.1000G>A` | NR_002196.3 | oui | le MANE Select d'un ARN long non codant est un `NR_` : filtrer sur `NM_` l'aurait écarté |
+| `MLL:c.100A>G` | NM_001197104.2 (KMT2A) | oui | symbole **retiré** résolu par `prev_symbol` (HGNC) ; la variation est ensuite refusée sur la base de référence, ce qui montre que la résolution a bien eu lieu |
+
+Et les deux refus que la résolution peut opposer, distincts d'une panne :
+
+| Saisie | Code | Message |
+|---|---|---|
+| `NOTAGENE:c.100A>G` | `GENE_UNKNOWN` | symbole inconnu de HGNC (trois champs) **et** de VariantValidator |
+| `MIR21:c.10A>G` | `GENE_NO_MANE` | gène connu, sans transcrit MANE Select — la saisie doit nommer un transcrit |
+
+Une accession NC_ d'un **autre** assemblage n'est pas réécrite en hg38 :
+`NC_000001.10:g.…` (hg19) reste une saisie HGVS, transmise telle quelle aux services.
+
+Le MANE Select du gène est lu chez HGNC (`mane_select`, les deux accessions appariées),
+avec `gene2transcripts_v2` de VariantValidator en repli — mesuré à 146 ms et ~1 KiB sous
+la restriction `mane_select`, `Access-Control-Allow-Origin: *`. La résolution précède la
+course VEP/VariantValidator : les deux sources reçoivent alors la **même** nomenclature
+sur le **même** transcrit, au lieu de laisser chacune choisir sur quel transcrit compter
+la position c. — ce qui ferait désigner deux variations différentes à la même saisie
+selon le service qui gagne la course.

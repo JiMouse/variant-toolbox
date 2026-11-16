@@ -5,7 +5,8 @@ export const UI = {
     tagline: 'Annotation de variations et rédaction du commentaire — version web de la ToolBox SNV',
     inputLabel: 'Variation',
     inputPlaceholder: 'NM_000546.6:c.524G>A   ou   chr17-7675088-C-T',
-    inputHelp: 'HGVS (transcrit RefSeq) ou pseudo-VCF hg38 (chr-pos-ref-alt)',
+    inputHelp: 'HGVS sur transcrit RefSeq, GÈNE:c.… ou HGVS g. hg38 (transcrit MANE Select), '
+      + 'ou pseudo-VCF hg38 (chr-pos-ref-alt)',
     classLabel: 'Classe du biologiste',
     analyse: 'Analyser',
     analysing: 'Analyse…',
@@ -98,7 +99,22 @@ export const UI = {
     regenerate: 'Régénérer',
     errSources: 'Sources indisponibles pour cette variation',
     errEmpty: 'Saisir une variation.',
-    errUnknown: 'Saisie non reconnue. Attendu : NM_…:c.… ou chr-pos-ref-alt (hg38).',
+    errUnknown: 'Saisie non reconnue. Attendu : NM_…:c.…, GÈNE:c.…, chr1:g.… '
+      + 'ou chr-pos-ref-alt (hg38).',
+    // Saisies qui ne nomment aucun transcrit : c'est le MANE Select qui est annoté,
+    // et l'interface doit le dire — la nomenclature c. rendue est la sienne.
+    transcriptFromGene: 'Aucun transcrit saisi : la position c. est comptée sur le transcrit '
+      + 'MANE Select de {gene}, {tx}. Pour un autre transcrit, l’écrire devant la nomenclature.',
+    transcriptFromGenomic: 'Aucun transcrit saisi : l’annotation porte sur le transcrit '
+      + 'MANE Select {tx}.',
+    geneRenamed: 'Symbole « {asked} » remplacé par {gene} (HGNC).',
+    errGeneUnknown: 'Gène inconnu : « {gene} ». Vérifier le symbole (HGNC), ou saisir la '
+      + 'nomenclature sur un transcrit — NM_…:c.…',
+    errGeneNoMane: '{gene} n’a pas de transcrit MANE Select : saisir la nomenclature sur le '
+      + 'transcrit voulu (NM_…:c.… ou NR_…:n.…).',
+    errGeneSourcesDown: 'Le transcrit MANE Select de {gene} n’a pas pu être obtenu : HGNC et '
+      + 'VariantValidator sont tous deux muets. Réessayer, ou saisir la nomenclature sur un '
+      + 'transcrit — NM_…:c.…',
     errVep: 'VEP n’a pas pu normaliser cette variation : {msg}',
     errSourcesDown: 'Les deux services de normalisation sont momentanément indisponibles '
       + '(Ensembl VEP et VariantValidator). Aucune analyse n’est possible sans eux : '
@@ -204,7 +220,8 @@ export const UI = {
     tagline: 'Variant annotation and report comment — web version of the SNV ToolBox',
     inputLabel: 'Variant',
     inputPlaceholder: 'NM_000546.6:c.524G>A   or   chr17-7675088-C-T',
-    inputHelp: 'HGVS (RefSeq transcript) or hg38 pseudo-VCF (chr-pos-ref-alt)',
+    inputHelp: 'HGVS on a RefSeq transcript, GENE:c.… or hg38 genomic HGVS (MANE Select '
+      + 'transcript), or hg38 pseudo-VCF (chr-pos-ref-alt)',
     classLabel: 'Reported class',
     analyse: 'Analyse',
     analysing: 'Analysing…',
@@ -295,7 +312,20 @@ export const UI = {
     regenerate: 'Regenerate',
     errSources: 'Sources unavailable for this variant',
     errEmpty: 'Enter a variant.',
-    errUnknown: 'Input not recognised. Expected: NM_…:c.… or chr-pos-ref-alt (hg38).',
+    errUnknown: 'Input not recognised. Expected: NM_…:c.…, GENE:c.…, chr1:g.… '
+      + 'or chr-pos-ref-alt (hg38).',
+    transcriptFromGene: 'No transcript entered: the c. position is counted on the MANE Select '
+      + 'transcript of {gene}, {tx}. For another transcript, write it before the nomenclature.',
+    transcriptFromGenomic: 'No transcript entered: the annotation is on the MANE Select '
+      + 'transcript {tx}.',
+    geneRenamed: 'Symbol "{asked}" replaced with {gene} (HGNC).',
+    errGeneUnknown: 'Unknown gene: "{gene}". Check the symbol (HGNC), or enter the '
+      + 'nomenclature on a transcript — NM_…:c.…',
+    errGeneNoMane: '{gene} has no MANE Select transcript: enter the nomenclature on the '
+      + 'transcript you want (NM_…:c.… or NR_…:n.…).',
+    errGeneSourcesDown: 'The MANE Select transcript of {gene} could not be obtained: HGNC and '
+      + 'VariantValidator are both silent. Try again, or enter the nomenclature on a '
+      + 'transcript — NM_…:c.…',
     errVep: 'VEP could not normalise this variant: {msg}',
     errSourcesDown: 'Both normalisation services are briefly unavailable '
       + '(Ensembl VEP and VariantValidator). No analysis is possible without them: '

@@ -1,18 +1,45 @@
-// Saisie → variant normalisé. Deux entrées possibles :
-//   HGVS     NM_000546.6:c.524G>A  (le nom du gène entre parenthèses est accepté)
+// Saisie → variant normalisé. Quatre entrées possibles :
+//   HGVS         NM_000546.6:c.524G>A  (le nom du gène entre parenthèses est accepté)
 //   pseudo-VCF hg38  chr17-7675088-C-T
+//   HGVS g. hg38     chr1:g.11117005T>A  (ou NC_000001.11:g.11117005T>A)
+//   gène + c.        MTHFR:c.665C>T
+// Les deux dernières ne nomment aucun transcrit : c'est le **MANE Select** qui est
+// retenu, et l'interface le dit (voir `transcriptAssumed`).
 // La normalisation passe toujours par VEP : c'est elle qui fixe gène, transcrit,
 // conséquence, exon/intron et les nomenclatures c./p./g.
 
 import {
   vepHgvs, vepEnsembl, vepVcf, refBase, refSeq, genomicHgvsFromVcf,
-  variantValidator, variantValidatorTranscript, ucscMane, NC_ACCESSION,
+  variantValidator, variantValidatorTranscript, variantValidatorGene,
+  genenames, ucscMane, NC_ACCESSION,
 } from './sources.js';
 import { hedge, errorText, predictedProtein } from './util.js';
 // Les seuils d'épissage sont définis une seule fois, là où ils sont dessinés.
 import { CANONICAL_BP, SPLICE_INTRON_BP } from './structure.js';
 
 const CHR_RE = /^(?:chr)?([0-9]{1,2}|[XYM]|MT)$/i;
+
+/**
+ * HGVS génomique hg38, sous les deux écritures qu'on rencontre : le nom du
+ * chromosome (`chr1:g.…`, le préfixe `chr` étant facultatif) et l'accession RefSeq
+ * (`NC_000001.11:g.…`), celle que VariantValidator exige.
+ */
+const GENOMIC_RE = /^(?:(?:chr)?([0-9]{1,2}|[XYM]|MT)|(NC_\d+\.\d+)):(g\..+)$/i;
+
+/**
+ * Symbole de gène suivi d'une nomenclature de transcrit : `MTHFR:c.665C>T`.
+ *
+ * Un symbole HGNC s'écrit avec des lettres, des chiffres, des tirets (`MT-CO1`,
+ * `NKX2-5`) et parfois un `@` final (`IGH@`) — jamais un point ni un tiret bas. C'est
+ * ce qui le distingue d'une accession (`NM_000546.6`, `ENST00000269305.9`) sans que la
+ * reconnaissance dépende de l'ordre des tests.
+ */
+const GENE_RE = /^([A-Za-z][A-Za-z0-9-]{0,19}@?):([cn]\..+)$/;
+
+/** Chromosome hg38 portant une accession NC_ — la réciproque de NC_ACCESSION. */
+const CHR_BY_NC = Object.fromEntries(
+  Object.entries(NC_ACCESSION).map(([chr, acc]) => [acc, chr]),
+);
 
 /** Reconnaît le type de saisie sans appel réseau. */
 export function parseInput(raw) {
@@ -32,11 +59,36 @@ export function parseInput(raw) {
     };
   }
 
+  // HGVS génomique : testé avant la branche HGVS, qui reconnaîtrait aussi
+  // « NC_000001.11:g.… » mais sans en tirer le chromosome.
+  const g = text.match(GENOMIC_RE);
+  if (g) {
+    const chr = g[1] ? normChr(g[1]) : CHR_BY_NC[g[2].toUpperCase()];
+    const body = g[3].replace(/^g\./i, 'g.');
+    // Une accession NC_ absente de la table est celle d'un **autre** assemblage
+    // (NC_000001.10 = hg19) : elle n'est pas réécrite en hg38, et reste à la charge
+    // de la branche HGVS, qui la transmet telle quelle aux services.
+    if (chr) {
+      return {
+        kind: 'genomic',
+        chr,
+        hgvs: `${chr}:${body}`,                  // forme attendue par VEP
+        desc: `${NC_ACCESSION[chr]}:${body}`,    // forme exigée par VariantValidator
+        raw: text,
+      };
+    }
+  }
+
   // HGVS : accession:c.… (ou n./g.)
   if (/^[A-Z]{2}_?\d+(\.\d+)?(\([^)]*\))?:[cngm]\./i.test(text)) {
     const hgvs = text.replace(/\(([^)]*)\)/, ''); // retirer le gène entre parenthèses
     return { kind: 'hgvs', hgvs, gene: (text.match(/\(([^)]*)\)/) || [])[1] || null, raw: text };
   }
+
+  // Gène + nomenclature, sans transcrit : le MANE Select sera résolu d'abord
+  // (voir `geneToMane`), puis la saisie suivra le chemin d'une saisie HGVS.
+  const gn = text.match(GENE_RE);
+  if (gn) return { kind: 'gene', gene: gn[1].toUpperCase(), cHgvs: gn[2], raw: text };
 
   return { kind: 'unknown', raw: text };
 }
@@ -516,14 +568,152 @@ function normaliseFailure(causes) {
   return err;
 }
 
+/* ------------------------------------------------------------------ *
+ * Saisie sans transcrit : le MANE Select du gène
+ * ------------------------------------------------------------------ */
+
+/**
+ * L'accession RefSeq du couple MANE Select d'une fiche HGNC.
+ *
+ * `mane_select` porte les **deux** accessions appariées, Ensembl et RefSeq —
+ * `['ENST00000376590.9', 'NM_005957.5']` — et c'est la seconde qu'on veut, versionnée
+ * telle quelle. Elle n'est pas toujours un `NM_` : le MANE Select de H19, ARN long non
+ * codant, est `NR_002196.3`. Fonction pure, testée (tools/test-comment.mjs).
+ */
+export function maneSelectOf(doc) {
+  const list = (doc && doc.mane_select) || [];
+  return list.map(String).find((acc) => /^N[MR]_/.test(acc)) || null;
+}
+
+/**
+ * MANE Select d'un gène selon HGNC — l'autorité sur les symboles, et déjà interrogée
+ * pour l'identité du gène (~40 ms, voir `genenames`).
+ *
+ * Les trois champs sont essayés dans l'ordre de leur autorité : le symbole approuvé,
+ * puis les symboles **retirés** (`prev_symbol` rend KMT2A pour MLL, ACSL4 pour FACL4),
+ * puis les alias. Une saisie correcte mais ancienne — courante en diagnostic — est
+ * ainsi acceptée, et le symbole rendu est celui d'aujourd'hui.
+ */
+async function hgncMane(gene) {
+  for (const field of ['symbol', 'prev_symbol', 'alias_symbol']) {
+    const doc = await genenames(`${field}/${encodeURIComponent(gene)}`);
+    if (doc) return { gene: doc.symbol || gene, transcript: maneSelectOf(doc), source: 'HGNC' };
+  }
+  return null;    // symbole inconnu de HGNC sous ses trois formes
+}
+
+/** MANE Select d'un gène selon VariantValidator — repli de HGNC. */
+async function vvMane(gene) {
+  const r = await variantValidatorGene(gene);
+  const entry = (Array.isArray(r) ? r : [r])[0] || {};
+  if (entry.error) return null;   // « Unable to recognise gene symbol … »
+  const tx = (entry.transcripts || [])
+    .find((t) => /^N[MR]_/.test(String(t && t.reference)));
+  return {
+    gene: entry.current_symbol || gene,
+    transcript: tx ? String(tx.reference) : null,
+    source: 'VariantValidator',
+  };
+}
+
+/** Échec de résolution d'un gène : un code, et le symbole concerné pour le message. */
+function geneError(code, gene) {
+  const err = new Error(`${code}: ${gene}`);
+  err.code = code;
+  err.gene = gene;
+  return err;
+}
+
+/**
+ * Saisie `GÈNE:c.…` → saisie HGVS sur le transcrit **MANE Select** du gène.
+ *
+ * La résolution précède tout : les deux sources de normalisation reçoivent alors la
+ * même nomenclature, sur le même transcrit, et le transcrit annoté est celui que
+ * l'interface annonce. Laisser VEP interpréter `MTHFR:c.665C>T` lui-même reviendrait
+ * à lui laisser choisir le transcrit sur lequel compter la position c. — donc à
+ * accepter que la même saisie désigne deux variations selon le service qui gagne la
+ * course.
+ *
+ * Trois refus, distingués parce qu'ils ne se corrigent pas de la même façon :
+ *   — `GENE_UNKNOWN` : le symbole n'existe pas, chez HGNC comme chez VariantValidator ;
+ *   — `GENE_NO_MANE` : le gène existe et n'a pas de transcrit MANE Select (micro-ARN,
+ *     par exemple) — la saisie doit alors nommer un transcrit ;
+ *   — `GENE_SOURCES_DOWN` : aucun des deux services n'a répondu, et le symbole n'est
+ *     pas en cause.
+ */
+async function geneToMane(parsed) {
+  const asked = parsed.gene;
+  let found = null;
+  let answered = false;
+
+  try {
+    found = await hgncMane(asked);
+    answered = true;
+  } catch (e) { /* HGNC muet : VariantValidator répond à la même question */ }
+
+  if (!found || !found.transcript) {
+    try {
+      const vv = await vvMane(asked);
+      answered = true;
+      if (vv && (vv.transcript || !found)) found = vv;
+    } catch (e) { /* les deux services muets : traité juste après */ }
+  }
+
+  if (!found) throw geneError(answered ? 'GENE_UNKNOWN' : 'GENE_SOURCES_DOWN', asked);
+  if (!found.transcript) throw geneError('GENE_NO_MANE', found.gene);
+
+  return {
+    gene: found.gene,
+    transcript: found.transcript,
+    source: found.source,
+    // À partir d'ici, une saisie HGVS ordinaire — un seul chemin ensuite.
+    parsed: {
+      kind: 'hgvs',
+      hgvs: `${found.transcript}:${parsed.cHgvs}`,
+      gene: found.gene,
+      raw: parsed.raw,
+    },
+  };
+}
+
+/**
+ * Ce que l'interface a à dire quand la saisie ne nommait **aucun** transcrit.
+ *
+ * Le pseudo-VCF n'en fait pas partie : il est la saisie de référence de l'application,
+ * et son recours au MANE Select est son contrat documenté. Les deux autres formes sont
+ * à prévenir, pour des raisons différentes — un HGVS g. est une position, que le
+ * transcrit ne déplace pas, mais dont il décide la nomenclature c. rendue ; un
+ * `GÈNE:c.…` est une position **comptée** sur le transcrit retenu, qui décide donc de
+ * la variation elle-même.
+ */
+function assumedTranscript(parsed, resolved, transcript) {
+  if (parsed.kind === 'gene') {
+    return {
+      from: 'gene',
+      asked: parsed.gene,
+      gene: resolved.gene,
+      source: resolved.source,
+      transcript,
+    };
+  }
+  if (parsed.kind === 'genomic') return { from: 'genomic', transcript };
+  return null;
+}
+
 /**
  * Normalise une saisie en un objet variant complet.
  * @returns {Promise<object>} chr, pos, ref, alt, pseudoVcf, gene, transcript, isMane, …
  */
 export async function normalize(input, { onProgress = null } = {}) {
-  const parsed = typeof input === 'string' ? parseInput(input) : input;
-  if (parsed.kind === 'empty') throw new Error('EMPTY_INPUT');
-  if (parsed.kind === 'unknown') throw new Error('UNRECOGNISED_INPUT');
+  const asked = typeof input === 'string' ? parseInput(input) : input;
+  if (asked.kind === 'empty') throw new Error('EMPTY_INPUT');
+  if (asked.kind === 'unknown') throw new Error('UNRECOGNISED_INPUT');
+
+  // `GÈNE:c.…` : le MANE Select du gène est résolu d'abord, et la saisie devient une
+  // saisie HGVS sur ce transcrit (voir `geneToMane`). `asked` garde la saisie telle
+  // qu'elle a été faite — c'est elle qui dit si le transcrit a été imposé ou choisi.
+  const resolved = asked.kind === 'gene' ? await geneToMane(asked) : null;
+  const parsed = resolved ? resolved.parsed : asked;
 
   const wantedTranscript = parsed.kind === 'hgvs' ? parsed.hgvs.split(':')[0] : null;
 
@@ -531,9 +721,11 @@ export async function normalize(input, { onProgress = null } = {}) {
   // pendre la connexion plutôt que d'échouer franchement, et on rendait la main
   // au bout de 100 s là où le repli répondait en moins d'une seconde.
   const viaVep = async () => {
-    const vep = parsed.kind === 'hgvs'
-      ? await vepHgvs(parsed.hgvs)
-      : await vepVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt);
+    // Les saisies HGVS c. et g. passent par le même endpoint : c'est une nomenclature
+    // que VEP attend, de transcrit ou de chromosome.
+    const vep = parsed.kind === 'vcf'
+      ? await vepVcf(parsed.chr, parsed.pos, parsed.ref, parsed.alt)
+      : await vepHgvs(parsed.hgvs);
     const it = Array.isArray(vep) ? vep[0] : vep;
     if (!it || it.error) throw new Error(`VEP: ${(it && it.error) || 'aucun résultat'}`);
     return it;
@@ -563,7 +755,15 @@ export async function normalize(input, { onProgress = null } = {}) {
   }
 
   // La course peut être gagnée par le repli, qui renvoie déjà un variant complet.
-  if (item && item.source === 'VariantValidator') return item;
+  if (item && item.source === 'VariantValidator') {
+    return {
+      ...item,
+      // La saisie rendue est celle qui a été faite, pas celle réécrite sur le MANE
+      // Select : c'est la première que l'utilisateur relit.
+      input: asked,
+      transcriptAssumed: assumedTranscript(asked, resolved, item.transcript),
+    };
+  }
 
   const { tc, selectedBy } = pickTranscript(item, wantedTranscript);
   if (!tc) throw new Error('VEP: aucune conséquence de transcrit');
@@ -606,7 +806,7 @@ export async function normalize(input, { onProgress = null } = {}) {
   const locField = exonField || intronField;
 
   return {
-    input: parsed,
+    input: asked,
     chr: vcf.chr,
     pos: vcf.pos,
     ref: vcf.ref,
@@ -621,6 +821,8 @@ export async function normalize(input, { onProgress = null } = {}) {
     gene: tc.gene_symbol || parsed.gene || null,
     transcript: tc.transcript_id || null,
     transcriptSelectedBy: selectedBy,
+    // Transcrit retenu faute d'en avoir reçu un : l'interface le nomme (voir app.js).
+    transcriptAssumed: assumedTranscript(asked, resolved, tc.transcript_id || null),
     isMane: Boolean(tc.mane_select),
     maneTranscript: maneTc ? maneTc.transcript_id : null,
     consequenceTerms: tc.consequence_terms || [],
@@ -857,6 +1059,10 @@ export async function normalizeViaVariantValidator(parsed) {
   let desc;
   if (parsed.kind === 'hgvs') {
     desc = parsed.hgvs;
+  } else if (parsed.kind === 'genomic') {
+    // VariantValidator ne connaît pas « chr1 » : c'est l'accession NC_ qu'il exige,
+    // et `parseInput` l'a déjà écrite.
+    desc = parsed.desc;
   } else {
     const acc = NC_ACCESSION[parsed.chr];
     if (!acc) throw new Error('VV: chromosome non pris en charge');

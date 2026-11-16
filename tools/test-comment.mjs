@@ -7,7 +7,7 @@
 import { buildComment, predictionVerdict, varTypeLabel, formatFreq } from '../js/comment.js';
 import { readFileSync } from 'node:fs';
 import { UI } from '../js/i18n.js';
-import { ensemblTranscript, pickManeRows, soTerms } from '../js/variant.js';
+import { ensemblTranscript, maneSelectOf, parseInput, pickManeRows, soTerms } from '../js/variant.js';
 import { buildVarTypeCheck } from '../js/annotate.js';
 import { hedge, predictedProtein } from '../js/util.js';
 
@@ -357,6 +357,47 @@ const used = new Set([
 const unknown = [...used].filter((k) => !(k in UI.fr) || !(k in UI.en));
 check('toutes les clés utilisées existent en FR et EN', unknown.join(',') || '—', '—');
 check('des clés sont bien utilisées', used.size > 20, true);
+
+/* — Reconnaissance de la saisie : quatre formes, et deux sans transcrit — */
+const kind = (text) => parseInput(text).kind;
+
+check('HGVS sur transcrit', kind('NM_000546.6:c.524G>A'), 'hgvs');
+check('HGVS avec le gène entre parenthèses', kind('NM_000546.6(TP53):c.524G>A'), 'hgvs');
+check('pseudo-VCF', kind('chr17-7675088-C-T'), 'vcf');
+check('pseudo-VCF à deux-points', kind('17:7675088:C:T'), 'vcf');
+check('HGVS g. sur nom de chromosome', kind('chr1:g.11117005T>A'), 'genomic');
+check('HGVS g. sans préfixe chr', kind('1:g.11117005T>A'), 'genomic');
+check('HGVS g. sur accession NC_ hg38', kind('NC_000001.11:g.11117005T>A'), 'genomic');
+check('gène + c.', kind('MTHFR:c.665C>T'), 'gene');
+check('gène + n.', kind('H19:n.100A>G'), 'gene');
+check('gène à tiret', parseInput('NKX2-5:c.100A>G').gene, 'NKX2-5');
+check('gène en minuscules', parseInput('mthfr:c.665C>T').gene, 'MTHFR');
+check('saisie vide', kind(''), 'empty');
+check('gène seul, sans nomenclature', kind('TP53'), 'unknown');
+check('texte quelconque', kind('pouet'), 'unknown');
+
+// Une accession NC_ d'un autre assemblage n'est pas réécrite en hg38 : elle reste une
+// saisie HGVS, transmise telle quelle aux services, qui la situent eux-mêmes.
+check('accession NC_ hors hg38 (NC_000001.10 = hg19)',
+  kind('NC_000001.10:g.11117005T>A'), 'hgvs');
+
+// Les deux formes que chaque service attend, pour la même saisie génomique.
+const g1 = parseInput('chr1:g.11117005T>A');
+check('HGVS g. : chromosome retenu', g1.chr, '1');
+check('HGVS g. : forme pour VEP', g1.hgvs, '1:g.11117005T>A');
+check('HGVS g. : forme pour VariantValidator', g1.desc, 'NC_000001.11:g.11117005T>A');
+check('HGVS g. sur accession : même forme pour VEP',
+  parseInput('NC_000001.11:g.11117005T>A').hgvs, '1:g.11117005T>A');
+check('HGVS g. : chrX', parseInput('chrX:g.100del').desc, 'NC_000023.11:g.100del');
+
+/* — MANE Select d'une fiche HGNC : l'accession RefSeq du couple, versionnée — */
+check('couple MANE Select',
+  maneSelectOf({ mane_select: ['ENST00000376590.9', 'NM_005957.5'] }), 'NM_005957.5');
+// Le MANE Select d'un ARN long non codant est un NR_ : filtrer sur NM_ l'aurait écarté.
+check('MANE Select non codant (H19)',
+  maneSelectOf({ mane_select: ['ENST00000414790.11', 'NR_002196.3'] }), 'NR_002196.3');
+check('gène sans MANE Select (MIR21)', maneSelectOf({ symbol: 'MIR21' }), null);
+check('fiche absente', maneSelectOf(null), null);
 
 /* — Course entre source principale et repli — */
 const later = (v, ms) => () => new Promise((r) => setTimeout(() => r(v), ms));

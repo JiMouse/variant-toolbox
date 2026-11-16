@@ -834,6 +834,16 @@ async function run() {
     render();
 
     const notes = [];
+    // Le transcrit n'a pas été saisi : le dire d'abord, car tout le reste — la
+    // nomenclature c., l'exon, le commentaire — est écrit sur celui-là.
+    const assumed = ctx.variant && ctx.variant.transcriptAssumed;
+    if (assumed) {
+      if (assumed.asked && assumed.gene && assumed.asked !== assumed.gene.toUpperCase()) {
+        notes.push(t(lang, 'geneRenamed', { asked: assumed.asked, gene: assumed.gene }));
+      }
+      notes.push(t(lang, assumed.from === 'gene' ? 'transcriptFromGene' : 'transcriptFromGenomic',
+        { tx: assumed.transcript, gene: assumed.gene }));
+    }
     if (ctx.source && ctx.source !== 'VEP') {
       // Deux messages, parce que le repli a deux qualités : le type de variation est
       // soit établi sur la structure exonique, soit encore déduit des nomenclatures.
@@ -873,7 +883,10 @@ async function run() {
     // Les codes d'abord : le message d'une panne de normalisation agrège les causes
     // des deux services et contient donc parfois « Failed to fetch » ou « VEP: … »,
     // qui ne doivent pas détourner le diagnostic vers une branche moins précise.
-    if (code === 'SOURCES_UNAVAILABLE') message(t(lang, 'errSourcesDown', { msg }), 'error');
+    if (code === 'GENE_UNKNOWN') message(t(lang, 'errGeneUnknown', { gene: e.gene }), 'error');
+    else if (code === 'GENE_NO_MANE') message(t(lang, 'errGeneNoMane', { gene: e.gene }), 'error');
+    else if (code === 'GENE_SOURCES_DOWN') message(t(lang, 'errGeneSourcesDown', { gene: e.gene }), 'error');
+    else if (code === 'SOURCES_UNAVAILABLE') message(t(lang, 'errSourcesDown', { msg }), 'error');
     else if (code === 'NO_MANE_TRANSCRIPT') message(t(lang, 'errNoMane', { msg }), 'error');
     else if (code === 'VARIANT_REJECTED') message(t(lang, 'errRejected', { msg }), 'error');
     else if (msg === 'DEADLINE') message(t(lang, 'errTimeout'), 'error');
