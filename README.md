@@ -186,9 +186,8 @@ et Ensembl), p., g., pseudo-VCF et nomenclature complète. Il copie la **valeur
 seule**, exactement celle qui est affichée — c'est pourquoi « hg38 » est écrit en note
 sur la ligne du `g.` et non collé devant la nomenclature : un
 `hg38 chr17:g.7675088C>T` n'entre pas dans la recherche d'une base. Le bouton
-**Copier c. p. g.** de l'en-tête donne les trois ensemble, une par ligne et chacune
-précédée de son libellé : sortis de l'écran, un `c.` et un `g.` ne se distinguent plus
-que par leur accession.
+**Copier la nomenclature** de l'en-tête copie la nomenclature complète, exactement
+comme le bouton de sa ligne : c'est la ligne que le compte rendu recopie.
 
 **Transcrit Ensembl.** Le transcrit RefSeq retenu est doublé de son équivalent
 Ensembl et de la nomenclature c. correspondante. Sur un transcrit **MANE Select** —
