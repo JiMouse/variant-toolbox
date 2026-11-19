@@ -311,24 +311,6 @@ function renderIdentity() {
   $('copyIdBtn').disabled = false;
 }
 
-/**
- * Les trois nomenclatures HGVS du transcrit retenu, d'un coup.
- *
- * Une par ligne et chacune précédée de son libellé : recopiée dans un dossier, une
- * nomenclature doit dire de quoi elle est la nomenclature — un `c.` et un `g.` sortis
- * de l'écran ne se distinguent plus que par leur accession. Les valeurs seules, elles,
- * se copient ligne par ligne, par le bouton de chaque ligne.
- */
-function hgvsText() {
-  const v = ctx.variant;
-  const sep = lang === 'fr' ? ' : ' : ': ';
-  return [
-    [t(lang, 'hgvsc'), v.hgvsc],
-    [t(lang, 'hgvsp'), v.hgvsp],
-    [t(lang, 'hgvsg'), v.genomicHgvs],
-  ].filter(([, value]) => value).map(([label, value]) => `${label}${sep}${value}`).join('\n');
-}
-
 function renderNumbers() {
   const cv = ctx.clinvar;
   const cvNode = document.createElement('span');
@@ -1218,7 +1200,11 @@ $('copyAcmgBtn').addEventListener('click', () => {
   copyToClipboard(acmgText(picked), $('copyAcmgBtn'), t(lang, 'acmgCopy'), t(lang, 'copied'));
 });
 $('copyIdBtn').addEventListener('click', () => {
-  if (ctx) copyToClipboard(hgvsText(), $('copyIdBtn'), t(lang, 'copyHgvs'), t(lang, 'copied'));
+  // Exactement la valeur du bouton ⧉ de la ligne « Nomenclature complète » : la
+  // ligne que le compte rendu recopie (voir buildNomenclature, js/comment.js).
+  if (ctx && ctx.variant) {
+    copyToClipboard(buildNomenclature(ctx.variant), $('copyIdBtn'), t(lang, 'copyHgvs'), t(lang, 'copied'));
+  }
 });
 
 /* ---------- démarrage ---------- */
