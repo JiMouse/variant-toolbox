@@ -176,6 +176,11 @@ button[disabled] { opacity: 0.55; cursor: default; }
 
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 .kv dt { color: var(--muted); font-size: 15px; }
+/* Lien vers la source d'une valeur (ClinVar, UniProt) : la couleur du texte est
+   gardée — le rouge d'un « Pathogenic » compris —, le soulignement pointillé dit
+   qu'on peut cliquer. */
+a.src-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+a.src-link:hover { color: var(--accent); text-decoration-style: solid; }
 .kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
 

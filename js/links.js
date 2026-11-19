@@ -4,6 +4,29 @@
 
 const enc = encodeURIComponent;
 
+/** Nomenclature complète `NM_…(GÈNE):c.…`, celle qu'on cherche dans ClinVar. */
+function fullNomen(v) {
+  const cPart = v.hgvsc ? v.hgvsc.split(':').slice(1).join(':') : null;
+  return cPart && v.transcript ? `${v.transcript}(${v.gene}):${cPart}` : v.hgvsc;
+}
+
+/**
+ * La variation dans ClinVar : sa page propre quand MyVariant donne le VariationID,
+ * sinon une recherche sur la nomenclature complète.
+ */
+export function clinvarUrl(ctx) {
+  const id = ctx.clinvar && ctx.clinvar.variationId;
+  if (id) return `https://www.ncbi.nlm.nih.gov/clinvar/variation/${enc(id)}/`;
+  const nomen = ctx.variant ? fullNomen(ctx.variant) : null;
+  return nomen ? `https://www.ncbi.nlm.nih.gov/clinvar/?term=${enc(nomen)}` : null;
+}
+
+/** La section « Family & Domains » de l'entrée UniProt du gène. */
+export function uniprotDomainsUrl(ctx) {
+  const acc = ctx.gene && ctx.gene.uniprot;
+  return acc ? `https://www.uniprot.org/uniprotkb/${enc(acc)}/entry#family_and_domains` : null;
+}
+
 /** Lien UCSC : fenêtre de ±250 pb, variant surligné (Annotation.UCSC_link). */
 function ucscLink(chr, pos, session) {
   const c = `chr${chr}`;
@@ -30,9 +53,7 @@ export function buildLinks(ctx, opts = {}) {
   const vcf = v.pseudoVcf;
   const { chr, pos, ref, alt } = v;
   const cPart = v.hgvsc ? v.hgvsc.split(':').slice(1).join(':') : null;
-  const nomen = cPart && v.transcript ? `${v.transcript}(${gene}):${cPart}` : v.hgvsc;
   const rs = ctx.rsid;
-  const uniprot = ctx.gene.uniprot;
   const hgnc = ctx.gene.hgncId;
   const geneId = ctx.gene.ncbiGeneId;
   const mim = ctx.gene.mim;
@@ -57,14 +78,10 @@ export function buildLinks(ctx, opts = {}) {
     L('lovd', 'LOVD', gene
       ? `https://databases.lovd.nl/shared/genes/${enc(gene)}`
       : null, 'gene'),
-    L('uniprot', 'UniProt', uniprot
-      ? `https://www.uniprot.org/uniprotkb/${enc(uniprot)}/entry#family_and_domains`
-      : null, 'gene'),
+    L('uniprot', 'UniProt', uniprotDomainsUrl(ctx), 'gene'),
 
     // — Variant : bases cliniques
-    L('clinvar', 'ClinVar', nomen
-      ? `https://www.ncbi.nlm.nih.gov/clinvar/?term=${enc(nomen)}`
-      : null, 'variant'),
+    L('clinvar', 'ClinVar', clinvarUrl(ctx), 'variant'),
     L('decipher', 'Decipher', vcf && gene
       ? `https://www.deciphergenomics.org/sequence-variant/${vcf}/genes/${enc(gene)}/protein-genomic-info`
       : null, 'variant'),
@@ -81,12 +98,6 @@ export function buildLinks(ctx, opts = {}) {
     L('intervar', 'InterVar', ref
       ? `https://wintervar.wglab.org/results.pos.php?queryType=position&chr=${chr}&pos=${pos}&ref=${ref}&alt=${alt}&build=hg38`
       : null, 'variant'),
-    // Revue ACMG critère par critère, à la main. L'application tourne dans le
-    // navigateur et n'expose ni API ni paramètre d'URL : le lien ne peut pas porter la
-    // variation, et la note le dit plutôt que de laisser croire à un lien contextuel.
-    L('acmgValidator', 'ACMG Validator',
-      'https://switzerlandomics.ch/technologies/acmg-validator/', 'variant',
-      lang === 'fr' ? 'revue manuelle, non préremplie' : 'manual review, not pre-filled'),
 
     // — Populations
     L('gnomad4', 'gnomAD r4', vcf

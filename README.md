@@ -74,7 +74,7 @@ retombe silencieusement sur Monarch.
 | gnomAD v2.1.1 exomes | MyVariant.info (`gnomad_exome`) |
 | SIFT, PolyPhen-2, AlphaMissense, REVEL, MetaLR, CADD, GERP++, phyloP, phastCons, InterPro | MyVariant.info (`dbnsfp`) |
 | SpliceAI | services Cloud Run de SpliceAI-lookup (hg38) |
-| ClinVar (signification agrégée + accessions RCV) | MyVariant.info (`clinvar`) |
+| ClinVar (signification agrégée + accessions RCV, VariationID pour le lien vers la variation) | MyVariant.info (`clinvar`) |
 | InterVar + critères ACMG | API wInterVar |
 | UniProt, HGNC, MIM du gène, NCBI GeneID | genenames.org (HGNC), repli mygene.info + E-utilities |
 | Phénotypes, MIM, transmission | OMIM (avec clé) ou Monarch |
@@ -426,14 +426,10 @@ comptes rendus que cette page sert à écrire, l'usage des fréquences alléliqu
 données prédictives, de la ségrégation et des données fonctionnelles, puis la
 classification elle-même.
 
-L'encart **Liens** porte un lien vers l'[ACMG Validator de Switzerland
-Omics](https://switzerlandomics.ch/technologies/acmg-validator/), outil de revue
-manuelle critère par critère. Le lien ne peut pas être prérempli : l'application tourne
-entièrement dans le navigateur et n'expose ni API ni paramètre d'URL. Côté API,
-[GeneBe](https://genebe.net/) rend bien des critères ACMG avec leurs modulateurs de
-force et le score en points, mais refuse les appels navigateur (`403 Invalid CORS
-request` dès qu'un en-tête `Origin` est présent, vérifié le 16/11/2026) : inutilisable
-depuis une page statique, voir [docs/cors.md](docs/cors.md).
+Côté API, [GeneBe](https://genebe.net/) rend bien des critères ACMG avec leurs
+modulateurs de force et le score en points, mais refuse les appels navigateur
+(`403 Invalid CORS request` dès qu'un en-tête `Origin` est présent, vérifié le
+16/11/2026) : inutilisable depuis une page statique, voir [docs/cors.md](docs/cors.md).
 
 ## Épisignature Epi2Diag
 
