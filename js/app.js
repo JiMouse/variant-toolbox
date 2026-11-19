@@ -315,7 +315,13 @@ function renderNumbers() {
   const cv = ctx.clinvar;
   const cvNode = document.createElement('span');
   if (cv.count) {
-    cvNode.textContent = `${cv.significance || NA} — ${t(lang, 'clinvarCount', { n: cv.count })}`;
+    // La signification d'abord, à part : côté pathogène (Pathogenic, Likely pathogenic
+    // et leur combinaison), elle se lit en gras rouge — c'est le constat qui compte.
+    // « Conflicting classifications of pathogenicity » contient le mot mais reste neutre.
+    const sig = document.createElement('span');
+    sig.textContent = cv.significance || NA;
+    if (cv.significance && /^(likely )?pathogenic/i.test(cv.significance)) sig.className = 'del';
+    cvNode.append(sig, ` — ${t(lang, 'clinvarCount', { n: cv.count })}`);
     const n = document.createElement('span');
     n.className = 'note mono';
     n.textContent = `  ${cv.accessions.join(', ')}`;
