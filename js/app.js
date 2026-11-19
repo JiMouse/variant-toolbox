@@ -4,7 +4,7 @@ import { normalize, parseInput } from './variant.js';
 import { annotate, DEL, TOL } from './annotate.js';
 import { buildComment, buildNomenclature, varTypeLabel } from './comment.js';
 import { buildAcmg, acmgText, TO_SPECIFY } from './acmg.js';
-import { buildLinks, LINK_GROUPS } from './links.js';
+import { buildLinks, LINK_GROUPS, clinvarUrl, uniprotDomainsUrl } from './links.js';
 import { geneSchema, zoomSchema } from './schema.js';
 import { intronBounds, exonSkipping } from './structure.js';
 import {
@@ -56,7 +56,8 @@ function kv(dl, pairs) {
   for (const [key, value, cls, copy] of pairs) {
     if (value === null || value === undefined || value === '') continue;
     const dt = document.createElement('dt');
-    dt.textContent = key;
+    if (key instanceof Node) dt.append(key);
+    else dt.textContent = key;
     const dd = document.createElement('dd');
     if (copy) {
       // La valeur passe dans un span : le bouton garde ainsi sa place à droite, qu'elle
@@ -74,6 +75,22 @@ function kv(dl, pairs) {
     }
     dl.append(dt, dd);
   }
+}
+
+/**
+ * Lien vers la source d'une valeur, sur le libellé comme sur la valeur : on clique
+ * là où l'on lit. Sans URL, le contenu est rendu tel quel, sans lien mort.
+ */
+function sourceLink(content, url) {
+  if (!url || content === null || content === undefined || content === '') return content;
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.className = 'src-link';
+  if (content instanceof Node) a.append(content);
+  else a.textContent = content;
+  return a;
 }
 
 /** Glyphes du bouton de copie d'une ligne : au repos, puis une fois la copie faite. */
@@ -321,7 +338,11 @@ function renderNumbers() {
     const sig = document.createElement('span');
     sig.textContent = cv.significance || NA;
     if (cv.significance && /^(likely )?pathogenic/i.test(cv.significance)) sig.className = 'del';
-    cvNode.append(sig, ` — ${t(lang, 'clinvarCount', { n: cv.count })}`);
+    // Signification et nombre de soumissions mènent à la variation dans ClinVar ; les
+    // accessions RCV restent du texte, à recopier.
+    const head = document.createElement('span');
+    head.append(sig, ` — ${t(lang, 'clinvarCount', { n: cv.count })}`);
+    cvNode.append(sourceLink(head, clinvarUrl(ctx)));
     const n = document.createElement('span');
     n.className = 'note mono';
     n.textContent = `  ${cv.accessions.join(', ')}`;
@@ -334,8 +355,9 @@ function renderNumbers() {
   kv($('numbers'), [
     // InterVar n'est plus ici : sa classe et ses critères sont une classification
     // ACMG, et se lisent donc dans l'encart qui en parle (voir renderAcmg).
-    [t(lang, 'clinvar'), cvNode],
-    [t(lang, 'domain'), orWait(ctx.domain, 'mv'),
+    [sourceLink(t(lang, 'clinvar'), clinvarUrl(ctx)), cvNode],
+    [sourceLink(t(lang, 'domain'), ctx.domain ? uniprotDomainsUrl(ctx) : null),
+      ctx.domain ? sourceLink(ctx.domain, uniprotDomainsUrl(ctx)) : orWait(ctx.domain, 'mv'),
       !ctx.domain && isPending('mv') ? 'na pending' : null],
   ]);
 

@@ -129,6 +129,7 @@ const MYVARIANT_FIELDS = [
   'dbnsfp.interpro.domain',
   'cadd.phred',
   'clinvar.rcv',
+  'clinvar.variant_id',
   'gnomad_exome.ac.ac',
   'gnomad_exome.hom.hom',
   'gnomad_exome.af.af',

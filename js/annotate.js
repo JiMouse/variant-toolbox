@@ -114,7 +114,9 @@ const SIG_ORDER = ['pathogenic', 'likely pathogenic', 'uncertain significance', 
  */
 export function buildClinvar(mv) {
   const rcvRaw = get(mv, 'clinvar.rcv');
-  if (!rcvRaw) return { count: 0, accessions: [], significance: null, significances: [] };
+  // VariationID : la page ClinVar de la variation elle-même (voir clinvarUrl, js/links.js).
+  const variationId = first(get(mv, 'clinvar.variant_id')) || null;
+  if (!rcvRaw) return { count: 0, accessions: [], significance: null, significances: [], variationId };
   const rcvs = Array.isArray(rcvRaw) ? rcvRaw : [rcvRaw];
   const accessions = rcvs.map((r) => r.accession).filter(Boolean);
   const sigs = [...new Set(rcvs
@@ -149,6 +151,7 @@ export function buildClinvar(mv) {
     significance,
     significances: sigs.sort((a, b) => SIG_ORDER.indexOf(a.toLowerCase()) - SIG_ORDER.indexOf(b.toLowerCase())),
     submitters: rcvs.reduce((n, r) => n + (Number(r.number_submitters) || 0), 0),
+    variationId,
   };
 }
 
