@@ -103,9 +103,6 @@ export function buildLinks(ctx, opts = {}) {
     L('gnomad4', 'gnomAD r4', vcf
       ? `https://gnomad.broadinstitute.org/variant/${vcf}?dataset=gnomad_r4`
       : null, 'pop'),
-    L('gnomad2', 'gnomAD r2_1', vcf
-      ? `https://gnomad.broadinstitute.org/variant/${vcf}?dataset=gnomad_r2_1`
-      : null, 'pop', lang === 'fr' ? 'coordonnées hg38' : 'hg38 coordinates'),
     L('dbsnp', 'dbSNP', rs
       ? `https://www.ncbi.nlm.nih.gov/snp/${enc(rs)}`
       : null, 'pop'),
