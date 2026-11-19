@@ -1083,7 +1083,6 @@ async function run() {
     const failed = Object.keys(ctx.errors);
     if (failed.length) notes.push(`${t(lang, 'errSources')} : ${failed.join(', ')}`);
     message(notes.join(' · '));
-    store.set('vt.lastQuery', query);
   } catch (e) {
     stopProgress();
     const msg = String(e && e.message ? e.message : e);
@@ -1240,7 +1239,10 @@ $('copyIdBtn').addEventListener('click', () => {
 $('omimKey').value = store.get('vt.omimKey');
 $('mobiKey').value = store.get('vt.mobiKey');
 $('gnomadVersion').value = store.get('vt.gnomadVersion', 'v4.1');
-$('variantInput').value = store.get('vt.lastQuery');
+// La saisie n'est pas conservée d'une visite à l'autre : une page rouverte part
+// vide, sans variation d'un dossier précédent. L'ancienne clé est effacée chez ceux
+// qui l'avaient encore. Partager une variation passe par l'URL (?v=…).
+store.del('vt.lastQuery');
 // Aucun résultat à l'ouverture : Copier et Régénérer n'ont rien à opérer.
 clearResults();
 applyLang();
