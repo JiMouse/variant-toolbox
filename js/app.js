@@ -1044,14 +1044,24 @@ async function run() {
       // Deux messages, parce que le repli a deux qualités : le type de variation est
       // soit établi sur la structure exonique, soit encore déduit des nomenclatures.
       const typed = ctx.variant && ctx.variant.varTypeFrom === 'structure';
-      notes.push(t(lang, typed ? 'fallbackSourceTyped' : 'fallbackSource', { src: ctx.source }));
 
       // Le contrôle gnomAD n'est rapporté que sur le chemin de repli : sur le chemin
       // normal il comparerait l'annotation VEP d'Ensembl à celle, plus ancienne, que
       // gnomAD en a tirée — un écart ne dirait alors rien de la variation.
       const chk = ctx.varTypeCheck;
-      if (chk && chk.agrees) notes.push(t(lang, 'varTypeConfirmed'));
-      else if (chk) {
+
+      // Rien à vérifier : transcrit saisi par l'utilisateur, type établi sur la
+      // structure exonique et confirmé par gnomAD. Le bandeau ne parlerait que de la
+      // mécanique (quel service a gagné la course contre VEP, souvent pour quelques
+      // centaines de ms) ; la source reste lisible dans « Source de normalisation ».
+      const nothingToCheck = typed && chk && chk.agrees && !assumed;
+      if (!nothingToCheck) {
+        notes.push(t(lang, typed ? 'fallbackSourceTyped' : 'fallbackSource', { src: ctx.source }));
+      }
+
+      if (chk && chk.agrees) {
+        if (!nothingToCheck) notes.push(t(lang, 'varTypeConfirmed'));
+      } else if (chk) {
         notes.push(t(lang, 'varTypeMismatch', {
           mine: varTypeLabel(ctx.variant, lang) || ctx.variant.varType,
           theirs: varTypeLabel({ varType: chk.term }, lang) || chk.term,
